@@ -41,9 +41,3 @@ func RaiseInvariant(module, invariantType, msg string, args ...any) {
 		panic("invariant violated: " + invariantType)
 	}
 }
-
-func Assert(condition bool, module, invariantType, msg string, args ...any) {
-	if !condition {
-		RaiseInvariant(module, invariantType, msg, args...)
-	}
-}
