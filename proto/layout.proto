@@ -52,3 +52,7 @@ message DataBlock {
     bytes value = 2;
   }
 }
+
+message Gooz {
+  string api = 1;
+}
