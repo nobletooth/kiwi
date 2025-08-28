@@ -2,39 +2,50 @@ package storage
 
 import (
 	"bytes"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"runtime"
 	"sync"
+
+	"github.com/nobletooth/kiwi/pkg/utils"
+	"google.golang.org/protobuf/proto"
 )
 
 const defaultBufferSize = 4096
 
+// bufferPool allows reusing buffers to reduce allocations.
 var bufferPool = sync.Pool{New: func() any { return bytes.NewBuffer(make([]byte, 0, defaultBufferSize)) }}
 
-type Block []byte
-
+// BlockWriter allows writing protobuf blocks to a block file.
 type BlockWriter struct { // Implements io.Writer.
-	mux           sync.Mutex
-	currentOffset int
-	writer        io.WriteCloser
-	buffer        *bytes.Buffer
+	mux    sync.Mutex // Protects the buffer and closed flag.
+	closed bool
+	writer io.WriteCloser
+	buffer *bytes.Buffer
 }
 
 var _ io.WriteCloser = (*BlockWriter)(nil)
 
 // NewBlockWriter is the constructor for BlockWriter.
 func NewBlockWriter(writer io.WriteCloser) *BlockWriter {
-	bw := &BlockWriter{mux: sync.Mutex{}, writer: writer, currentOffset: 0}
+	bw := &BlockWriter{mux: sync.Mutex{}, writer: writer, closed: false}
 	// Call Close when the object is garbage collected.
 	runtime.SetFinalizer(bw, func(bw *BlockWriter) { _ = bw.Close() })
 	return bw
 }
 
 func (bw *BlockWriter) Write(p []byte) (flushed int, err error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+
 	bw.mux.Lock()
 	defer bw.mux.Unlock()
-
+	if bw.closed {
+		return 0, errors.New("block writer is closed")
+	}
 	if bw.buffer == nil { // Take a buffer from the pool.
 		bw.buffer = bufferPool.Get().(*bytes.Buffer)
 	}
@@ -58,14 +69,49 @@ func (bw *BlockWriter) Write(p []byte) (flushed int, err error) {
 		}
 	}
 
+	if flushed != len(p) {
+		utils.RaiseInvariant("block", "incomplete_write", "Did an incomplete write to the block writer buffer.",
+			"expected", len(p), "actual", flushed)
+		return flushed, fmt.Errorf("incomplete write to buffer: expected %d bytes, got %d bytes", len(p), flushed)
+	}
+
 	return flushed, nil
 }
 
+// WriteBlock writes a proto.Message block with its size to the underlying writer.
+func (bw *BlockWriter) WriteBlock(msg proto.Message) error {
+	if msg == nil {
+		return errors.New("cannot create block from nil proto message")
+	}
+
+	block, err := proto.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	// For each block, write its size as a fixed 8-byte little-endian integer followed by the block data.
+	// This allows the reader to know how many bytes to read for each block.
+	blockSizeBinary := make([]byte, 8)
+	binary.LittleEndian.PutUint64(blockSizeBinary, uint64(len(block)))
+	if _, err := bw.Write(blockSizeBinary); err != nil {
+		return fmt.Errorf("failed to write block size: %w", err)
+	}
+	if _, err := bw.Write(block); err != nil {
+		return fmt.Errorf("failed to write block data: %w", err)
+	}
+
+	return nil
+}
+
 func (bw *BlockWriter) Close() error {
-	defer func() { // Give back the buffer to the pool.
+	bw.mux.Lock()
+	defer func() {
+		// Give back the buffer to the pool.
 		bw.buffer.Reset()
 		bufferPool.Put(bw.buffer)
 		bw.buffer = nil
+		bw.closed = true
+		bw.mux.Unlock()
 	}()
 
 	// Flush any remaining bytes in the buffer.
@@ -78,6 +124,96 @@ func (bw *BlockWriter) Close() error {
 	// Close the underlying writer.
 	if err := bw.writer.Close(); err != nil {
 		return fmt.Errorf("failed to close block writer: %w", err)
+	}
+
+	return nil
+}
+
+// BlockReader allows reading protobuf blocks from a block file.
+type BlockReader struct { // Implements io.ReaderAt.
+	mux    sync.Mutex // Protects the reader and closed flag.
+	closed bool
+	reader io.ReaderAt
+	buffer *bytes.Buffer
+}
+
+var _ io.ReaderAt = (*BlockReader)(nil)
+
+// NewBlockReader is the constructor for BlockReader.
+func NewBlockReader(reader io.ReaderAt) *BlockReader {
+	br := &BlockReader{mux: sync.Mutex{}, reader: reader, closed: false}
+	// Call Close when the object is garbage collected.
+	runtime.SetFinalizer(br, func(br *BlockReader) { _ = br.Close() })
+	return br
+}
+
+// ReadAt implements the io.ReaderAt interface.
+func (br *BlockReader) ReadAt(p []byte, off int64) (readBytes int, err error) {
+	br.mux.Lock()
+	defer br.mux.Unlock()
+	if br.closed {
+		return 0, errors.New("block reader is closed")
+	}
+	return br.reader.ReadAt(p, off)
+}
+
+// ReadBlock reads a proto.Message block from the given offset.
+func (br *BlockReader) ReadBlock(offset int, msg proto.Message) error {
+	br.mux.Lock()
+	defer br.mux.Unlock()
+
+	if br.closed {
+		return errors.New("block reader is closed")
+	}
+
+	// Read the block size (8 bytes, little-endian).
+	sizeBuf := make([]byte, 8)
+	if _, err := br.reader.ReadAt(sizeBuf, int64(offset)); err != nil {
+		return fmt.Errorf("failed to read block size: %w", err)
+	}
+
+	// Read the block data.
+	blockSize := int64(binary.LittleEndian.Uint64(sizeBuf))
+	sectionReader := io.NewSectionReader(br.reader, int64(offset+8), blockSize)
+	blockBuffer := bufferPool.Get().(*bytes.Buffer)
+	defer func() {
+		blockBuffer.Reset()
+		bufferPool.Put(blockBuffer)
+	}()
+	readBytes, err := blockBuffer.ReadFrom(sectionReader)
+	if err != nil {
+		return fmt.Errorf("failed to read block data: %w", err)
+	}
+	if readBytes != blockSize {
+		utils.RaiseInvariant("block", "incomplete_read", "Read an incomplete block.",
+			"expected", blockSize, "actual", readBytes)
+		return fmt.Errorf("incomplete block read: expected %d bytes, got %d bytes", blockSize, readBytes)
+	}
+
+	// Unmarshal data block.
+	if err := proto.Unmarshal(blockBuffer.Bytes(), msg); err != nil {
+		return fmt.Errorf("failed to unmarshal block data: %w", err)
+	}
+
+	return nil
+}
+
+// Close releases resources used by the BlockReader.
+func (br *BlockReader) Close() error {
+	br.mux.Lock()
+	defer func() {
+		// Give back the buffer to the pool.
+		if br.buffer != nil {
+			br.buffer.Reset()
+			bufferPool.Put(br.buffer)
+			br.buffer = nil
+		}
+		br.closed = true
+		br.mux.Unlock()
+	}()
+
+	if br.closed {
+		return errors.New("block reader is already closed")
 	}
 
 	return nil
