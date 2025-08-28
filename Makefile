@@ -3,6 +3,14 @@
 SRCS = $(patsubst ./%,%,$(shell find . -name "*.go" -not -path "*vendor*" -not -path "*.pb.go"))
 PROTOS = $(patsubst ./%,%,$(shell find . -name "*.proto"))
 
+ROOT := github.com/nobletooth/kiwi
+GIT ?= git
+COMMIT := $(shell $(GIT) rev-parse HEAD)
+VERSION ?= $(cat version)
+BUILD_TIME := $(shell LANG=en_US date +"%F_%T_%z")
+BUILD_PKG := $(ROOT)/pkg/utils
+LD_FLAGS := -X $(BUILD_PKG).Version=$(VERSION) -X $(BUILD_PKG).Commit=$(COMMIT) -X $(BUILD_PKG).BuildTime=$(BUILD_TIME)
+
 help: ## Display this help screen
 	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
@@ -13,14 +21,17 @@ proto: $(PROTOS) ## To generate protobuf code.
 
 kiwi: $(SRCS) | .bins proto ## To build the kiwi binary.
 	@echo "Building kiwi..."
-	@go build -o ./bin/kiwi ./cmd/kiwi
+	@go build -o ./bin/kiwi -ldflags="$(LD_FLAGS)" ./cmd/kiwi
 	@echo "Building kiwi done."
 
-test: $(SRCS) | .bins proto ## To run tests.
+test: $(SRCS) | proto ## To run tests.
 	@go test -v ./...
 
 run: kiwi ## To run a minimal kiwi server.
-	@./bin/kiwi
+	@./bin/kiwi $(filter-out $@,$(MAKECMDGOALS))
+
+%:
+	@:
 
 .bins:
 	@mkdir -p bin
