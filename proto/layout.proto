@@ -29,26 +29,21 @@ message PartHeader {
   int64 bf_index_offset = 7; // Offset to the start of the Bloom filter index section (0 if not present).
 }
 
-message SkipIndex {
-  repeated Entry entries = 1; // Sorted by key.
-  message Entry {
-    bytes key = 1;          // First key of the block.
-    int64 block_offset = 2; // Offset to the start of the block in the data section.
-    int32 block_size = 3;   // Size of the block in bytes.
-  }
+message SkipIndex { // Entries are sorted by key / prefix.
+  repeated bytes prefix = 1;       // Common prefix for all keys in each data block; May be empty.
+  repeated bytes keys = 2;          // First key of each data block.
+  repeated int32 block_offsets = 3; // Offset to the start of each data block in the data section.
+  repeated int32 block_sizes = 4;   // Size of each data block in bytes.
 }
 
-message BloomFilterIndex {
+message BloomFilterIndex { // Allows skipping the entire part when keys are not present.
   int64 num_bits = 1;       // Number of bits in the Bloom filter.
   int32 num_hash_funcs = 2; // Number of hash functions used.
   bytes bit_array = 3;      // Bit array representing the Bloom filter.
 }
 
-message DataBlock {
-  bytes key_prefix = 1; // Common prefix for all keys in this block.
-  repeated Entry entries = 2; // Sorted by key.
-  message Entry {
-    bytes key = 1;
-    bytes value = 2;
-  }
+message DataBlock { // Entries are sorted by key.
+  bytes prefix = 1; // Common prefix for all keys in this block; May be empty.
+  repeated bytes keys = 2; // The key without the common prefix.
+  repeated bytes values = 3; // The corresponding value for each key.
 }
