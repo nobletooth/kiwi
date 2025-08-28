@@ -1,9 +1,9 @@
 version: v2
 clean: false # Allows *.proto files to remain in the output directory if they are not regenerated.
 plugins:
-    - remote: buf.build/protocolbuffers/go:v1.31.0
-      out: proto
-      opt: paths=source_relative
-      include_imports: true
+  - local: protoc-gen-go
+    out: proto
+    opt: paths=source_relative
+    include_imports: true
 inputs:
   - directory: proto
