@@ -43,7 +43,6 @@ message BloomFilterIndex { // Allows skipping the entire part when keys are not 
 }
 
 message DataBlock { // Entries are sorted by key.
-  bytes prefix = 1; // Common prefix for all keys in this block; May be empty.
-  repeated bytes keys = 2; // The key without the common prefix.
-  repeated bytes values = 3; // The corresponding value for each key.
+  repeated bytes keys = 1; // The key without the common prefix mentioned in SkipIndex.
+  repeated bytes values = 2; // The corresponding value for each key.
 }
