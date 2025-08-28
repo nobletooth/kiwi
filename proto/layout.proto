@@ -32,8 +32,8 @@ message PartHeader {
 message SkipIndex { // Entries are sorted by key / prefix.
   repeated bytes prefix = 1;       // Common prefix for all keys in each data block; May be empty.
   repeated bytes keys = 2;          // First key of each data block.
-  repeated int32 block_offsets = 3; // Offset to the start of each data block in the data section.
-  repeated int32 block_sizes = 4;   // Size of each data block in bytes.
+  repeated int64 block_offsets = 3; // Offset to the start of each data block in the data section.
+  repeated int64 block_sizes = 4;   // Size of each data block in bytes.
 }
 
 message BloomFilterIndex { // Allows skipping the entire part when keys are not present.
