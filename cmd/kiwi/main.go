@@ -11,10 +11,12 @@ import (
 
 	"github.com/nobletooth/kiwi/pkg/port"
 	"github.com/nobletooth/kiwi/pkg/storage"
+	"github.com/nobletooth/kiwi/pkg/utils"
 )
 
 func main() {
 	flag.Parse()
+	utils.InitLogging()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	signals := make(chan os.Signal, 1)
