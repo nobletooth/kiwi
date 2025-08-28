@@ -6,14 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/nobletooth/kiwi/pkg/storage"
 	"github.com/tidwall/redcon"
 )
 
-const RedisOk = "OK"
-
-var address = flag.String("address", ":6380", "The ip:port to listen on for Redis protocol.")
+var address = flag.String("address", "0.0.0.0:6380", "The ip:port to listen on for Redis protocol.")
 
 // redisCommand represents a Redis command with its arguments.
 type redisCommand struct {
@@ -119,12 +118,18 @@ func RunRedisServer(ctx context.Context, store storage.KeyValueHolder) error {
 
 	redisServer := redcon.NewServerNetwork("tcp" /*net*/, *address,
 		/*handler*/ func(conn redcon.Conn, cmd redcon.Command) {
+			slog.Debug("Handling command.", "cmd", string(cmd.Raw))
+
 			// Convert redcon.Command to redisCommand.
-			command := redisCommand{command: string(cmd.Args[0]), args: make([]string, len(cmd.Args)-1)}
-			for i := 1; i < len(cmd.Args); i++ {
-				command.args[i-1] = string(cmd.Args[i])
+			redisCmd := redisCommand{
+				command: strings.ToUpper(string(cmd.Args[0])), // Allows case-insensitive commands.
+				args:    make([]string, len(cmd.Args)-1),      // Exclude the command itself.
 			}
-			output := redisHandler.handle(command)
+			for i := 1; i < len(cmd.Args); i++ {
+				redisCmd.args[i-1] = string(cmd.Args[i])
+			}
+
+			output := redisHandler.handle(redisCmd)
 			if output.closeConnection {
 				conn.WriteString(output.writeString)
 				if err := conn.Close(); err != nil {
@@ -132,8 +137,22 @@ func RunRedisServer(ctx context.Context, store storage.KeyValueHolder) error {
 				}
 				return
 			}
+			if output.writeNil {
+				conn.WriteNull()
+				return
+			}
+			if output.err != nil {
+				conn.WriteError(*output.err)
+				return
+			}
+			if output.writeInt != nil {
+				conn.WriteInt(*output.writeInt)
+				return
+			}
+			conn.WriteString(output.writeString)
 		},
 		/*accept*/ func(conn redcon.Conn) bool {
+			slog.Info("Accepting connection.", "addr", conn.NetConn().RemoteAddr().String())
 			return true // Accept all connections.
 		},
 		/*close*/ func(conn redcon.Conn, err error) {
@@ -142,6 +161,7 @@ func RunRedisServer(ctx context.Context, store storage.KeyValueHolder) error {
 
 	serverErrSignal := make(chan error, 1)
 	go func() {
+		slog.Info("Starting Redis server.", "address", *address)
 		if err := redisServer.ListenAndServe(); err != nil {
 			serverErrSignal <- err
 		}
