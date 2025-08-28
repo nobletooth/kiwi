@@ -6,12 +6,13 @@ PROTOS = $(patsubst ./%,%,$(shell find . -name "*.proto"))
 ROOT := github.com/nobletooth/kiwi
 GIT ?= git
 COMMIT := $(shell $(GIT) rev-parse HEAD)
-VERSION ?= $(cat version)
+VERSION ?= $(shell cat version)
 BUILD_TIME := $(shell LANG=en_US date +"%F_%T_%z")
 BUILD_PKG := $(ROOT)/pkg/utils
 LD_FLAGS := -X $(BUILD_PKG).Version=$(VERSION) -X $(BUILD_PKG).Commit=$(COMMIT) -X $(BUILD_PKG).BuildTime=$(BUILD_TIME)
 
 help: ## Display this help screen
+	@echo "$(ROOT):$(VERSION)"
 	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 proto: $(PROTOS) ## To generate protobuf code.
@@ -30,8 +31,11 @@ test: $(SRCS) | proto ## To run tests.
 run: kiwi ## To run a minimal kiwi server.
 	@./bin/kiwi $(filter-out $@,$(MAKECMDGOALS))
 
+version: kiwi ## To print the build info.
+	@./bin/kiwi -print_version -log_level info | jq
 %:
 	@:
 
 .bins:
 	@mkdir -p bin
+

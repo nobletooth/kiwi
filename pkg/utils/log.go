@@ -60,7 +60,7 @@ func initLoggingWith(handlerType LogHandlerType, logLevel LogLevel) {
 
 	// `SetDefault` happens atomically and doesn't panic when called in multiple goroutines.
 	slog.SetDefault(slog.New(handler))
-	slog.Info("Log handler configured successfully.", "type", handlerType, "logLevel", logLevel)
+	slog.Debug("Log handler configured successfully.", "type", handlerType, "logLevel", logLevel)
 }
 
 // InitLogging configures default logger of slog. Note that this method must be called after flag.Parse().

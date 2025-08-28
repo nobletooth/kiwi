@@ -14,9 +14,16 @@ import (
 	"github.com/nobletooth/kiwi/pkg/utils"
 )
 
+var printVersion = flag.Bool("print_version", false, "Print the version and exit.")
+
 func main() {
 	flag.Parse()
 	utils.InitLogging()
+
+	if *printVersion {
+		slog.Info("Kiwi build info.", "version", utils.Version, "commit", utils.Commit, "build", utils.BuildTime)
+		return
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	signals := make(chan os.Signal, 1)
