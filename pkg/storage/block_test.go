@@ -39,7 +39,7 @@ func TestBlockStorage(t *testing.T) {
 		assert.NoError(t, err)
 		reader, err := NewBlockReader(tmpFile)
 		assert.NoError(t, err)
-		offset, messageIdx := 0, 0
+		offset, messageIdx := int64(0), int64(0)
 		for {
 			msg := &kiwipb.TestRecord{}
 			nextOffset, err := reader.ReadBlock(offset, msg)

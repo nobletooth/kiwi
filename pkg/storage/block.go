@@ -156,7 +156,7 @@ func NewBlockReader(reader io.ReaderAt) (*BlockReader, error) {
 }
 
 // ReadBlock reads a proto.Message block from the given offset.
-func (br *BlockReader) ReadBlock(offset int, msg proto.Message) (int /*nextOffset*/, error) {
+func (br *BlockReader) ReadBlock(offset int64, msg proto.Message) (int64 /*nextOffset*/, error) {
 	br.mux.Lock()
 	defer br.mux.Unlock()
 
@@ -193,7 +193,7 @@ func (br *BlockReader) ReadBlock(offset int, msg proto.Message) (int /*nextOffse
 		return 0, fmt.Errorf("failed to unmarshal block data: %w", err)
 	}
 
-	return offset + 8 + int(readBytes) /*nextOffset*/, nil
+	return offset + 8 + readBytes /*nextOffset*/, nil
 }
 
 // Close releases resources used by the BlockReader.
