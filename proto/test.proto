@@ -1,0 +1,9 @@
+syntax = "proto3";
+package kiwi;
+
+option go_package = "github.com/nobletooth/kiwi/proto";
+
+message TestRecord { // A dummy record for testing only.
+    int32 id = 1;
+    string name = 2;
+}
