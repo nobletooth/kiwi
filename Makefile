@@ -16,6 +16,9 @@ kiwi: $(SRCS) | .bins proto ## To build the kiwi binary.
 	@go build -o ./bin/kiwi ./cmd/kiwi
 	@echo "Building kiwi done."
 
+test: $(SRCS) | .bins proto ## To run tests.
+	@go test -v ./...
+
 run: kiwi ## To run a minimal kiwi server.
 	@./bin/kiwi
 
