@@ -1,0 +1,54 @@
+// This protobuf file describes the layout of data storage for Kiwi.
+// The storage layout follows an LSM-Tree like structure, consisting of these types:
+// 1. Table: Equivalent to a Redis DB; Kiwi makes a separate folder per table.
+// 2. Part : Each table's data is separated into multiple parts (SSTables); each part is an immutable file containing
+//           an indexed list of keys and values with a slotted-page structure. Parts are named using UUIDs.
+//           Each part points to its next and previous parts, allowing both-way iterations.
+//           When the Kiwi memory table is full, it is flushed to disk as a new part.
+//
+//  Parts are self-contained files with the following structure in order:
+//  - Header:     Metadata about the part, including offsets to key sections within the file.
+//  - Skip Index: A sparse index of the first key of each block and its offsets.
+//  - BF Index:   An optional Bloom filter for quick key existence checks per each block.
+//  - Data Section: Actual key-value pairs, stored in a slotted-page format.
+
+
+syntax = "proto3";
+package kiwi;
+
+option go_package = "github.com/nobletooth/kiwi/proto";
+
+// Part header is always at the beginning of a part file.
+message PartHeader {
+  int64 id = 1; // Part's ID; sorted by time; File's name is <id>.part
+  int64 next_part = 2; // ID of the next part; empty if this is the last part.
+  int64 prev_part = 3; // ID of the previous part; empty if this is the first part.
+
+  int64 data_section_offset = 5; // Offset to the start of the data section.
+  int64 skip_index_offset = 6;   // Offset to the start of the skip index section.
+  int64 bf_index_offset = 7; // Offset to the start of the Bloom filter index section (0 if not present).
+}
+
+message SkipIndex {
+  repeated Entry entries = 1; // Sorted by key.
+  message Entry {
+    bytes key = 1;          // First key of the block.
+    int64 block_offset = 2; // Offset to the start of the block in the data section.
+    int32 block_size = 3;   // Size of the block in bytes.
+  }
+}
+
+message BloomFilterIndex {
+  int64 num_bits = 1;       // Number of bits in the Bloom filter.
+  int32 num_hash_funcs = 2; // Number of hash functions used.
+  bytes bit_array = 3;      // Bit array representing the Bloom filter.
+}
+
+message DataBlock {
+  bytes key_prefix = 1; // Common prefix for all keys in this block.
+  repeated Entry entries = 2; // Sorted by key.
+  message Entry {
+    bytes key = 1;
+    bytes value = 2;
+  }
+}
