@@ -1,14 +1,17 @@
 package storage
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 
+	"github.com/nobletooth/kiwi/pkg/utils"
 	kiwipb "github.com/nobletooth/kiwi/proto"
 )
 
@@ -23,14 +26,14 @@ type dataBlockKey struct {
 	offset    int64
 }
 
+// BlockCache is an in-memory cache that reduces disk reads for frequently accessed data blocks.
 // TODO: Make this an actual cache.
-
 type BlockCache struct {
 	mux  sync.Mutex
 	data map[dataBlockKey]*kiwipb.DataBlock
 }
 
-// getSharedCache is the constructor for BlockCache.
+// getSharedCache returns the singleton shared block cache instance.
 func getSharedCache() *BlockCache {
 	initCacheOnce.Do(func() {
 		sharedCache = &BlockCache{mux: sync.Mutex{}, data: make(map[dataBlockKey]*kiwipb.DataBlock)}
@@ -51,17 +54,18 @@ func (p *BlockCache) Set(table, ssTableId, offset int64, block *kiwipb.DataBlock
 	p.data[dataBlockKey{table: table, ssTableId: ssTableId, offset: offset}] = block
 }
 
+// SSTable represents a single immutable sorted string table stored on disk.
+// TODO Add Bloom filter index.
 type SSTable struct {
-	mux         sync.Mutex // Protects against concurrent files.
-	closed      bool
-	file        *os.File // A readonly file accessed by blockReader.
-	blockReader *BlockReader
+	mux    sync.Mutex // Protects against concurrent files.
+	closed bool
+	table  int64 // The table id this SSTable belongs to, e.g. 123 in /path/to/data/123/456.sst
 
-	table     int64
-	header    *kiwipb.PartHeader
-	skipIndex *kiwipb.SkipIndex
-	// TODO Add Bloom filter index.
-	sharedCache *BlockCache
+	file        *os.File // A readonly file used by blockReader.
+	blockReader *BlockReader
+	header      *kiwipb.PartHeader // Eagerly loaded into memory.
+	skipIndex   *kiwipb.SkipIndex  // Eagerly loaded into memory.
+	sharedCache *BlockCache        // Allows access to data blocks.
 }
 
 // NewSSTable is the constructor for SSTable.
@@ -104,9 +108,85 @@ func NewSSTable(filePath string) (*SSTable, error) {
 	return ssTable, nil
 }
 
-func (s *SSTable) Get(key string) (string, error) {
-	//TODO implement me
-	panic("implement me")
+// getFromDataBlocks scans through the cached and on-disk data blocks to find the value for the given key.
+func (s *SSTable) getFromDataBlocks(key []byte) ([]byte, error) {
+	// Since the skip index is sorted by key prefixes, we can use binary search to find the right data block.
+	// We do a prefix search to find the first block whose prefix is greater than the key. Since prefixes may
+	// have collisions, we need to scan backwards to get the complete matching range.
+	// For instance, when searching for "abc", we may end up on the "ab" prefix in the index, so we need to go back
+	// to find the "a" or the "" (empty) prefix as well. We may even see multiple "ab" prefixes.
+	blockPrefixes := s.skipIndex.GetPrefix()
+	endIndex, _ := slices.BinarySearchFunc(blockPrefixes, key, bytes.Compare)
+	startIndex := endIndex
+	for startIndex > 0 && bytes.HasPrefix(blockPrefixes[startIndex-1], key) {
+		startIndex--
+	}
+
+	// Now that we have the proper block range, we need to scan each block for the key.
+	sstableId := s.header.GetId() // Cache to avoid expensive heap calls.
+	blockOffsets := s.skipIndex.GetBlockOffsets()
+	for i := startIndex; i < endIndex; i++ {
+		// Read the data block.
+		blockOffset := blockOffsets[i]
+		var dataBlock *kiwipb.DataBlock
+		if cachedBlock, exists := s.sharedCache.Get(s.table, sstableId, blockOffset); exists {
+			// Read from in-memory data block cache.
+			dataBlock = cachedBlock
+		} else {
+			// Read from disk part and populate the cache.
+			dataBlock = &kiwipb.DataBlock{}
+			if _, err := s.blockReader.ReadBlock(blockOffset, dataBlock); err != nil {
+				return nil, fmt.Errorf("failed to read data block at offset %d: %w", blockOffset, err)
+			}
+			s.sharedCache.Set(s.table, sstableId, blockOffset, dataBlock)
+		}
+
+		// Now that we have the data block, we can scan it for the key. Note that the keys in the data block
+		// are stripped of their mutual prefix aforementioned in the skip index.
+		keyWithoutPrefix := bytes.TrimPrefix(key, blockPrefixes[i])
+		if keyIndex, found := slices.BinarySearchFunc(dataBlock.GetKeys(), keyWithoutPrefix, bytes.Compare); found {
+			return dataBlock.GetValues()[keyIndex], nil
+		} else { // Key not found in this block, continue to next block.
+			continue
+		}
+	}
+
+	return nil, ErrKeyNotFound
+}
+
+// GetPrevTablePath returns the file path of the previous SSTable in the chain, if any.
+func (s *SSTable) GetPrevTablePath() (string /*filePath*/, bool /*hasPrevious*/) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+
+	prevPartId := s.header.GetPrevPart()
+	if prevPartId == 0 {
+		return "", false
+	}
+
+	prevFilePath := filepath.Join(filepath.Dir(s.file.Name()), fmt.Sprintf("%d.sst", prevPartId))
+	if _, err := os.Stat(prevFilePath); errors.Is(err, os.ErrNotExist) {
+		utils.RaiseInvariant("sstable", "non_existent_prev_table",
+			"The previous sstable file does not exist.", "previousFile", prevFilePath)
+		return "", false
+	}
+
+	return prevFilePath, true
+}
+
+func (s *SSTable) Get(key []byte) ([]byte, error) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	// When the SSTable is closed, we cannot read from it anymore.
+	if s.closed {
+		return nil, errors.New("sstable is closed")
+	}
+	// First, check if the key is within the min/max range of the SSTable.
+	if bytes.Compare(key, s.skipIndex.GetFirstKey()) < 0 || bytes.Compare(key, s.skipIndex.GetLastKey()) > 0 {
+		return nil, ErrKeyNotFound
+	}
+	// The key is within the range, so we need to scan the data blocks.
+	return s.getFromDataBlocks(key)
 }
 
 func (s *SSTable) Close() error {
