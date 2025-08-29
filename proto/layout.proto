@@ -7,10 +7,10 @@
 //           When the Kiwi memory table is full, it is flushed to disk as a new part.
 //
 //  Parts are self-contained files with the following structure in order:
-//  - Header:     Metadata about the part, including offsets to key sections within the file.
-//  - Skip Index: A sparse index of the first key of each block and its offsets.
-//  - BF Index:   An optional Bloom filter for quick key existence checks per each block.
-//  - Data Section: Actual key-value pairs, stored in a slotted-page format.
+//  - Header:       Metadata about the part, including offsets to key sections within the file.
+//  - Skip Index:   A sparse index of the first key of each block and its offsets.
+//  - BF Index:     An optional Bloom filter for quick key existence checks per each block.
+//  - Data Section: Actual key-value pairs stripped of their common prefixes, organized in blocks.
 
 
 syntax = "proto3";
@@ -18,21 +18,19 @@ package kiwi;
 
 option go_package = "github.com/nobletooth/kiwi/proto";
 
-// Part header is always at the beginning of a part file.
-message PartHeader {
-  int64 id = 1; // Part's ID; sorted by time; File's name is <id>.part
-  int64 next_part = 2; // ID of the next part; empty if this is the last part.
-  int64 prev_part = 3; // ID of the previous part; empty if this is the first part.
-
-  int64 skip_index_offset = 4;   // Offset to the start of the skip index section.
-  int64 bf_index_offset = 5; // Offset to the start of the Bloom filter index section (0 if not present).
+message PartHeader {// Always at the beginning of a part file and loaded into memory.
+  // NOTE: Since keeping the reference to the next part needs disk updates, we don't do that.
+  int64 id = 1;                // Part's ID; sorted by time; File's name is <id>.part
+  int64 prev_part = 2;         // ID of the previous part; zero if this is the first part.
+  int64 skip_index_offset = 3; // Offset to the start of the skip index section.
+  int64 bf_index_offset = 4;   // Offset to the start of the Bloom filter index section (0 if not present).
 }
 
 message SkipIndex {// Entries are sorted by key / prefix.
-  repeated bytes prefix = 1;       // Common prefix for all keys in each data block; May be empty.
-  repeated bytes keys = 2;          // First key of each data block.
-  repeated int64 block_offsets = 3; // Offset to the start of each data block in the data section.
-  repeated int64 block_sizes = 4;   // Size of each data block in bytes.
+  repeated bytes prefix = 1;        // Common prefix for all keys in each data block; May be empty.
+  bytes first_key = 2;              // The first key in the whole data blocks (including the common prefix).
+  bytes last_key = 3;               // The last key in the whole data blocks (including the common prefix).
+  repeated int64 block_offsets = 4; // Offset to the start of each data block in the data section.
 }
 
 message BloomFilterIndex {// Allows skipping the entire part when keys are not present.
@@ -42,6 +40,6 @@ message BloomFilterIndex {// Allows skipping the entire part when keys are not p
 }
 
 message DataBlock {// Entries are sorted by key.
-  repeated bytes keys = 1; // The key without the common prefix mentioned in SkipIndex.
+  repeated bytes keys = 1;   // The key without the common prefix mentioned in SkipIndex.
   repeated bytes values = 2; // The corresponding value for each key.
 }
