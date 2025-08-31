@@ -32,7 +32,7 @@ func writeSSTable(prevId int64, pairs []Pair, path string) error {
 		return errors.New("expected a non-empty list of pairs")
 	}
 
-	// Partition the pairs into data blocks and their corresponding prefixes.
+	// Compress the pairs into data blocks and their corresponding prefixes.
 	prefixes, dataBlocks := compressDataBlocks(pairs)
 	if len(prefixes) != len(dataBlocks) {
 		utils.RaiseInvariant("chain", "datablock_prefix_size_mismatch",
