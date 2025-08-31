@@ -1,8 +1,16 @@
+// SSTables are immutable on-disk files that store sorted key-value pairs. A Kiwi table is separated into a
+// chain of SSTables, where each SSTable contains a subset of the table's data and is composed of multiple blocks,
+// including a header block, a skip index block, an optional bloom filter block, and multiple data blocks.
+// The header and skip index blocks are eagerly loaded into memory when the SSTable is opened.
+// The data blocks are lazily loaded on demand when a key is requested. To reduce disk reads, frequently accessed
+// data blocks are cached in memory using a shared block cache.
+
 package storage
 
 import (
 	"bytes"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,45 +21,74 @@ import (
 
 	"github.com/nobletooth/kiwi/pkg/utils"
 	kiwipb "github.com/nobletooth/kiwi/proto"
+	"google.golang.org/protobuf/proto"
 )
 
-var (
-	initCacheOnce sync.Once
-	sharedCache   *BlockCache
-)
+var tmpFolder = flag.String("temp_folder", os.TempDir(), "Temporary folder for SSTable writes.")
 
-type dataBlockKey struct {
-	table     int64
-	ssTableId int64
-	offset    int64
-}
+// writeSSTable writes the given key-value pairs to an SSTable file at the specified path.
+func writeSSTable(prevId int64, pairs []Pair, path string) error {
+	if len(pairs) == 0 {
+		return errors.New("expected a non-empty list of pairs")
+	}
 
-// BlockCache is an in-memory cache that reduces disk reads for frequently accessed data blocks.
-// TODO: Make this an actual cache.
-type BlockCache struct {
-	mux  sync.Mutex
-	data map[dataBlockKey]*kiwipb.DataBlock
-}
+	// Partition the pairs into data blocks and their corresponding prefixes.
+	prefixes, dataBlocks := partitionToDataBlocks(pairs)
+	if len(prefixes) != len(dataBlocks) {
+		utils.RaiseInvariant("chain", "datablock_prefix_size_mismatch",
+			"Expected the same number of prefixes and data blocks.",
+			"prefixes", len(prefixes), "dataBlocks", len(dataBlocks))
+		return errors.New("expected the same number of prefixes and data blocks")
+	}
 
-// getSharedCache returns the singleton shared block cache instance.
-func getSharedCache() *BlockCache {
-	initCacheOnce.Do(func() {
-		sharedCache = &BlockCache{mux: sync.Mutex{}, data: make(map[dataBlockKey]*kiwipb.DataBlock)}
-	})
-	return sharedCache
-}
+	// Build data block offsets.
+	blocks := make([]proto.Message, len(dataBlocks))
+	for i, db := range dataBlocks {
+		blocks[i] = db
+	}
 
-func (p *BlockCache) Get(table, ssTableId, offset int64) (*kiwipb.DataBlock, bool) {
-	p.mux.Lock()
-	defer p.mux.Unlock()
-	val, exists := p.data[dataBlockKey{table: table, ssTableId: ssTableId, offset: offset}]
-	return val, exists
-}
+	// Build header.
+	lastDBlockIndex := len(dataBlocks) - 1
+	lastKeyIndex := len(dataBlocks[lastDBlockIndex].GetKeys()) - 1
+	header := &kiwipb.PartHeader{
+		Id:       prevId + 1,
+		PrevPart: prevId,
+		SkipIndex: &kiwipb.PartHeader_SkipIndex{
+			Prefixes:     prefixes,
+			FirstKey:     slices.Concat(prefixes[0], dataBlocks[0].GetKeys()[0]),
+			LastKey:      slices.Concat(prefixes[lastDBlockIndex], dataBlocks[lastDBlockIndex].GetKeys()[lastKeyIndex]),
+			BlockOffsets: getBlockOffsets(blocks),
+		},
+	}
 
-func (p *BlockCache) Set(table, ssTableId, offset int64, block *kiwipb.DataBlock) {
-	p.mux.Lock()
-	defer p.mux.Unlock()
-	p.data[dataBlockKey{table: table, ssTableId: ssTableId, offset: offset}] = block
+	// Write blocks into a temporary file first.
+	tmpFile, err := os.CreateTemp(*tmpFolder, "sstable_*.tmp")
+	if err != nil || tmpFile == nil {
+		return fmt.Errorf("failed to create temp file '%s' for sstable: %w", tmpFile.Name(), err)
+	}
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+	blockWriter, err := NewBlockWriter(tmpFile)
+	if err != nil {
+		return fmt.Errorf("failed to create block writer for sstable: %w", err)
+	}
+	if err := blockWriter.WriteBlock(header); err != nil {
+		return fmt.Errorf("failed to write header block for sstable: %w", err)
+	}
+	for _, dataBlock := range dataBlocks {
+		if err := blockWriter.WriteBlock(dataBlock); err != nil {
+			return fmt.Errorf("failed to write data block for sstable: %w", err)
+		}
+	}
+	if err := blockWriter.Close(); err != nil { // Flush all data.
+		return fmt.Errorf("failed to close block writer for sstable: %w", err)
+	}
+
+	// Rename the temporary file to the final path.
+	if err := os.Rename(tmpFile.Name(), path); err != nil {
+		return fmt.Errorf("failed to rename temp file '%s' to final path '%s': %w", tmpFile.Name(), path, err)
+	}
+
+	return nil
 }
 
 // SSTable represents a single immutable sorted string table stored on disk.
@@ -61,11 +98,11 @@ type SSTable struct {
 	closed bool
 	table  int64 // The table id this SSTable belongs to, e.g. 123 in /path/to/data/123/456.sst
 
-	file        *os.File // A readonly file used by blockReader.
-	blockReader *BlockReader
-	header      *kiwipb.PartHeader // Eagerly loaded into memory.
-	skipIndex   *kiwipb.SkipIndex  // Eagerly loaded into memory.
-	sharedCache *BlockCache        // Allows access to data blocks.
+	blockReader     *BlockReader       // Reads header and data blocks.
+	file            *os.File           // A readonly file used by blockReader.
+	dataBlockOffset int64              // The byte offset where data blocks start in the file.
+	header          *kiwipb.PartHeader // Eagerly loaded into memory.
+	sharedCache     *BlockCache        // Allows access to data blocks.
 }
 
 // NewSSTable is the constructor for SSTable.
@@ -92,16 +129,12 @@ func NewSSTable(filePath string) (*SSTable, error) {
 	if _, err := bw.ReadBlock(0 /*offset*/, partHeader); err != nil {
 		return nil, fmt.Errorf("failed to read sstable part header: %w", err)
 	}
-	skipIndex := &kiwipb.SkipIndex{}
-	if _, err := bw.ReadBlock(partHeader.GetSkipIndexOffset(), skipIndex); err != nil {
-		return nil, fmt.Errorf("failed to read sstable skip index: %w", err)
-	}
 
 	ssTable := &SSTable{
 		blockReader: bw, file: file, table: table,
-		header: partHeader, skipIndex: skipIndex,
-		sharedCache: getSharedCache(),
-		closed:      false,
+		header: partHeader, sharedCache: getSharedCache(), closed: false,
+		// The data blocks start right after the header block.
+		dataBlockOffset: getBlockSize(partHeader),
 	}
 	// Call Close when the object is garbage collected.
 	runtime.SetFinalizer(ssTable, func(ssTable *SSTable) { _ = ssTable.Close() })
@@ -115,7 +148,7 @@ func (s *SSTable) getFromDataBlocks(key []byte) ([]byte, error) {
 	// have collisions, we need to scan backwards to get the complete matching range.
 	// For instance, when searching for "abc", we may end up on the "ab" prefix in the index, so we need to go back
 	// to find the "a" or the "" (empty) prefix as well. We may even see multiple "ab" prefixes.
-	blockPrefixes := s.skipIndex.GetPrefix()
+	blockPrefixes := s.header.GetSkipIndex().GetPrefixes()
 	endIndex, _ := slices.BinarySearchFunc(blockPrefixes, key, bytes.Compare)
 	startIndex := endIndex
 	for startIndex > 0 && bytes.HasPrefix(blockPrefixes[startIndex-1], key) {
@@ -124,10 +157,10 @@ func (s *SSTable) getFromDataBlocks(key []byte) ([]byte, error) {
 
 	// Now that we have the proper block range, we need to scan each block for the key.
 	sstableId := s.header.GetId() // Cache to avoid expensive heap calls.
-	blockOffsets := s.skipIndex.GetBlockOffsets()
+	blockOffsets := s.header.GetSkipIndex().GetBlockOffsets()
 	for i := startIndex; i < endIndex; i++ {
 		// Read the data block.
-		blockOffset := blockOffsets[i]
+		blockOffset := blockOffsets[i] + s.dataBlockOffset
 		var dataBlock *kiwipb.DataBlock
 		if cachedBlock, exists := s.sharedCache.Get(s.table, sstableId, blockOffset); exists {
 			// Read from in-memory data block cache.
@@ -182,7 +215,8 @@ func (s *SSTable) Get(key []byte) ([]byte, error) {
 		return nil, errors.New("sstable is closed")
 	}
 	// First, check if the key is within the min/max range of the SSTable.
-	if bytes.Compare(key, s.skipIndex.GetFirstKey()) < 0 || bytes.Compare(key, s.skipIndex.GetLastKey()) > 0 {
+	skipIndex := s.header.GetSkipIndex()
+	if bytes.Compare(key, skipIndex.GetFirstKey()) < 0 || bytes.Compare(key, skipIndex.GetLastKey()) > 0 {
 		return nil, ErrKeyNotFound
 	}
 	// The key is within the range, so we need to scan the data blocks.
