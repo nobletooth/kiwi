@@ -2,15 +2,17 @@
 // The storage layout follows an LSM-Tree like structure, consisting of these types:
 // 1. Table: Equivalent to a Redis DB; Kiwi makes a separate folder per table.
 // 2. Part : Each table's data is separated into multiple parts (SSTables); each part is an immutable file containing
-//           an indexed list of keys and values with a slotted-page structure. Parts are named using UUIDs.
-//           Each part points to its next and previous parts, allowing both-way iterations.
+//           an indexed list of keys and values. Parts are named using incremental integers starting from 1.
+//           Each part points to its previous parts, allowing backward iterations.
 //           When the Kiwi memory table is full, it is flushed to disk as a new part.
 //
-//  Parts are self-contained files with the following structure in order:
-//  - Header:       Metadata about the part, including offsets to key sections within the file.
-//  - Skip Index:   A sparse index of the first key of each block and its offsets.
-//  - BF Index:     An optional Bloom filter for quick key existence checks per each block.
-//  - Data Section: Actual key-value pairs stripped of their common prefixes, organized in blocks.
+//  Parts are self-contained files with the following structure:
+//  - Header: Metadata about the part, including offsets to data sections within the file.
+//            Each header file is small enough to be fully loaded into memory, and contains two indexes:
+//            Skip index, which is a sparse index of the first key of each block and its offsets.
+//            BF index, an optional Bloom filter for quick key existence checks per each block.
+//  - Data  : Actual key-value pairs stripped of their common prefixes, organized in blocks.
+//            Each block contains a list of keys and their corresponding values, sorted by key.
 
 
 syntax = "proto3";
@@ -20,25 +22,26 @@ option go_package = "github.com/nobletooth/kiwi/proto";
 
 message PartHeader {// Always at the beginning of a part file and loaded into memory.
   // NOTE: Since keeping the reference to the next part needs disk updates, we don't do that.
-  int64 id = 1;                // Part's ID; sorted by time; File's name is <id>.part
-  int64 prev_part = 2;         // ID of the previous part; zero if this is the first part.
-  int64 skip_index_offset = 3; // Offset to the start of the skip index section.
-  int64 bf_index_offset = 4;   // Offset to the start of the Bloom filter index section (0 if not present).
+  int64 id = 1;        // Part's ID; sorted by time; File's name is <id>.part
+  int64 prev_part = 2; // ID of the previous part; zero if this is the first part.
+
+  SkipIndex skip_index = 3; // In-memory skip index for the entire part.
+  message SkipIndex {// Entries are sorted by key / prefix.
+    repeated bytes prefixes = 1;      // Common prefix for all keys in each data block; May be empty.
+    bytes first_key = 2;              // The first key in the whole data blocks (including the common prefix).
+    bytes last_key = 3;               // The last key in the whole data blocks (including the common prefix).
+    repeated int64 block_offsets = 4; // Relative offset to the start of each data block in the data section.
+  }
+
+  BloomFilterIndex bf_index = 4; // In-memory Bloom filter for the entire part (optional).
+  message BloomFilterIndex {// Allows skipping the entire part when keys are not present.
+    int64 num_bits = 1;       // Number of bits in the Bloom filter.
+    int32 num_hash_funcs = 2; // Number of hash functions used.
+    bytes bit_array = 3;      // Bit array representing the Bloom filter.
+  }
 }
 
-message SkipIndex {// Entries are sorted by key / prefix.
-  repeated bytes prefix = 1;        // Common prefix for all keys in each data block; May be empty.
-  bytes first_key = 2;              // The first key in the whole data blocks (including the common prefix).
-  bytes last_key = 3;               // The last key in the whole data blocks (including the common prefix).
-  repeated int64 block_offsets = 4; // Offset to the start of each data block in the data section.
-}
-
-message BloomFilterIndex {// Allows skipping the entire part when keys are not present.
-  int64 num_bits = 1;       // Number of bits in the Bloom filter.
-  int32 num_hash_funcs = 2; // Number of hash functions used.
-  bytes bit_array = 3;      // Bit array representing the Bloom filter.
-}
-
+// The data section contains multiple data blocks, each structured as follows:
 message DataBlock {// Entries are sorted by key.
   repeated bytes keys = 1;   // The key without the common prefix mentioned in SkipIndex.
   repeated bytes values = 2; // The corresponding value for each key.
