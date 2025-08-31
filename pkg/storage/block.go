@@ -70,17 +70,6 @@ func getBlockSize(block proto.Message) int64 {
 	return int64(proto.Size(block) + 8)
 }
 
-// getBlockOffsets computes the starting offsets of each block.
-func getBlockOffsets(blocks []*kiwipb.DataBlock) []int64 {
-	offsets := make([]int64, len(blocks))
-	currOffset := int64(0)
-	for i, block := range blocks {
-		offsets[i] = currOffset
-		currOffset += getBlockSize(block)
-	}
-	return offsets
-}
-
 // BlockWriter allows writing protobuf blocks to a block file.
 type BlockWriter struct {
 	mux    sync.Mutex // Protects the buffer and closed flag.
