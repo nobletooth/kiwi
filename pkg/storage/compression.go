@@ -11,31 +11,33 @@ import (
 
 type Pair struct{ Key, Value []byte }
 
-// partitionToDataBlocks splits a sorted list of keys into optimal prefixed blocks.
-// Each block stores one shared prefix and per-key suffixes, minimizing total bytes:
-// sum(len(prefix(a)) + sum(len(suffixes(b))) over all blocks b.
-//
-// Assumes pairs are sorted by Key (lexicographically).
-func partitionToDataBlocks(pairs []Pair) ([] /*prefix*/ []byte, []*kiwipb.DataBlock) {
+// compressDataBlocks splits a sorted list of keys into optimal prefixed blocks.
+// Each block stores one shared prefix and per-key suffixes, minimizing total bytes.
+// Tie-breaker: on equal savings prefer fewer blocks (i.e., longer blocks).
+func compressDataBlocks(pairs []Pair) ([] /*prefix*/ []byte, []*kiwipb.DataBlock) {
 	pairsNum := len(pairs)
 	if pairsNum == 0 {
 		return nil, nil
 	}
 
-	// Precompute adjacent longest common prefixes (LCP): lcpNext[i] = LCP(keys[i], keys[i+1]).
+	// Precompute adjacent LCP: lcpNext[i] = LCP(keys[i], keys[i+1]).
 	lcpNext := make([]int, pairsNum-1)
 	for i := 0; i+1 < pairsNum; i++ {
 		lcpNext[i] = lcpLen(pairs[i].Key, pairs[i+1].Key)
 	}
 
-	// DP for maximum total savings.
-	// Savings of a block [i..j] = (j - i) * LCP_all(i..j),
-	// where LCP_all(i..j) = min(lcpNext[i..j-1]) and 0 for a singleton.
-	dp := make([]int, pairsNum+1) // dp[pairsNum] = 0.
-	end := make([]int, pairsNum)  // Best end index j for block starting at index `i`.
+	// DP for maximum total savings with tie-break on block count.
+	// Savings of a block [i..j] = (j - i) * min(lcpNext[i..j-1]), singleton => 0.
+	dpSave := make([]int, pairsNum+1)   // Best savings from i to end.
+	dpBlocks := make([]int, pairsNum+1) // Min blocks when achieving dpSave[i].
+	end := make([]int, pairsNum)        // Chosen j for block starting at index i.
+
 	for i := pairsNum - 1; i >= 0; i-- {
-		best, bestJ := -1, i
-		minL := 1<<31 - 1
+		bestSave := -1
+		bestBlocks := int(^uint(0) >> 1) // max int
+		bestJ := i
+
+		minL := int(^uint(0) >> 1) // Running minimum of lcpNext.
 		for j := i; j < pairsNum; j++ {
 			var blockSave int
 			if j == i {
@@ -46,12 +48,21 @@ func partitionToDataBlocks(pairs []Pair) ([] /*prefix*/ []byte, []*kiwipb.DataBl
 				}
 				blockSave = (j - i) * minL
 			}
-			if total := blockSave + dp[j+1]; total > best {
-				best = total
+			// candSave = total saved bytes if we choose current block [i..j],
+			// plus the optimal savings for the remainder starting at j+1.
+			candSave := blockSave + dpSave[j+1]
+			// candBlocks = total number of blocks if we choose [i..j] (that's 1),
+			// plus the number of blocks used for the remainder (dpBlocks[j+1]).
+			// Used only to break ties in favor of fewer blocks.
+			candBlocks := 1 + dpBlocks[j+1]
+			if candSave > bestSave || (candSave == bestSave && candBlocks < bestBlocks) {
+				bestSave = candSave
+				bestBlocks = candBlocks
 				bestJ = j
 			}
 		}
-		dp[i] = best
+		dpSave[i] = bestSave
+		dpBlocks[i] = bestBlocks
 		end[i] = bestJ
 	}
 
@@ -60,16 +71,19 @@ func partitionToDataBlocks(pairs []Pair) ([] /*prefix*/ []byte, []*kiwipb.DataBl
 	var blocks []*kiwipb.DataBlock
 	for i := 0; i < pairsNum; {
 		j := end[i]
-		// Compute LCP_all(i..j) for the chosen block.
-		pLen := 0
+		// LCP_all(i..j).
+		predixLength := 0
 		if j > i {
-			pLen = slices.Min(lcpNext[i:j])
+			predixLength = slices.Min(lcpNext[i:j])
 		}
-		// Construct the DataBlock with prefix and suffixes.
-		prefix := pairs[i].Key[:pLen]
-		db := &kiwipb.DataBlock{Keys: make([][]byte, j-i+1), Values: make([][]byte, j-i+1)}
+		// Construct compressed data block.
+		prefix := pairs[i].Key[:predixLength]
+		db := &kiwipb.DataBlock{
+			Keys:   make([][]byte, j-i+1),
+			Values: make([][]byte, j-i+1),
+		}
 		for k := i; k <= j; k++ {
-			db.Keys[k-i] = pairs[k].Key[pLen:] // Suffix slice.
+			db.Keys[k-i] = pairs[k].Key[predixLength:] // Suffix.
 			db.Values[k-i] = pairs[k].Value
 		}
 		prefixes = append(prefixes, prefix)
@@ -80,18 +94,17 @@ func partitionToDataBlocks(pairs []Pair) ([] /*prefix*/ []byte, []*kiwipb.DataBl
 	return prefixes, blocks
 }
 
-// lcpLen returns the length of the longest common prefix of keys `k1` and `k2`.
+// lcpLen returns the length of the longest common prefix of keys k1 and k2.
 func lcpLen(k1, k2 []byte) int {
 	biggerSize := len(k1)
 	if len(k2) < biggerSize {
 		biggerSize = len(k2)
 	}
 
-	// Compare by bytes. Case-sensitive, exact match.
-	lcpSize := 0
-	for lcpSize < biggerSize && k1[lcpSize] == k2[lcpSize] {
-		lcpSize++
+	longestCommon := 0
+	for longestCommon < biggerSize && k1[longestCommon] == k2[longestCommon] {
+		longestCommon++
 	}
 
-	return lcpSize
+	return longestCommon
 }

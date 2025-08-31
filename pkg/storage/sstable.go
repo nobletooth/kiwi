@@ -33,7 +33,7 @@ func writeSSTable(prevId int64, pairs []Pair, path string) error {
 	}
 
 	// Partition the pairs into data blocks and their corresponding prefixes.
-	prefixes, dataBlocks := partitionToDataBlocks(pairs)
+	prefixes, dataBlocks := compressDataBlocks(pairs)
 	if len(prefixes) != len(dataBlocks) {
 		utils.RaiseInvariant("chain", "datablock_prefix_size_mismatch",
 			"Expected the same number of prefixes and data blocks.",
