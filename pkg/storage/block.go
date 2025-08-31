@@ -30,22 +30,6 @@ var (
 	sharedCache   *BlockCache
 )
 
-// getBlockSize calculates the size of a protobuf message when stored on disk as a block.
-func getBlockSize(block proto.Message) int64 {
-	return int64(proto.Size(block) + 8)
-}
-
-// getBlockOffsets computes the starting offsets of each block.
-func getBlockOffsets(blocks []proto.Message) []int64 {
-	offsets := make([]int64, len(blocks))
-	currOffset := int64(0)
-	for i, block := range blocks {
-		offsets[i] = currOffset
-		currOffset += getBlockSize(block)
-	}
-	return offsets
-}
-
 // dbCacheKey is the cache key for a data block in the BlockCache.
 type dbCacheKey struct {
 	table     int64
@@ -79,6 +63,22 @@ func (p *BlockCache) Set(table, ssTableId, offset int64, block *kiwipb.DataBlock
 	p.mux.Lock()
 	defer p.mux.Unlock()
 	p.data[dbCacheKey{table: table, ssTableId: ssTableId, offset: offset}] = block
+}
+
+// getBlockSize calculates the size of a protobuf message when stored on disk as a block.
+func getBlockSize(block proto.Message) int64 {
+	return int64(proto.Size(block) + 8)
+}
+
+// getBlockOffsets computes the starting offsets of each block.
+func getBlockOffsets(blocks []*kiwipb.DataBlock) []int64 {
+	offsets := make([]int64, len(blocks))
+	currOffset := int64(0)
+	for i, block := range blocks {
+		offsets[i] = currOffset
+		currOffset += getBlockSize(block)
+	}
+	return offsets
 }
 
 // BlockWriter allows writing protobuf blocks to a block file.

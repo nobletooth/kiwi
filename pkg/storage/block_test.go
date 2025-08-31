@@ -13,6 +13,24 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestGetSharedCache(t *testing.T) {
+	cache1 := getSharedCache()
+	cache2 := getSharedCache()
+	assert.Same(t, cache1, cache2, "Expected both calls to return the same cache instance")
+}
+
+func TestGetBlockSize(t *testing.T) {
+	t.Run("non-nil", func(t *testing.T) {
+		record := &kiwipb.TestRecord{Id: 123, Name: "test_record"}
+		size := getBlockSize(record)
+		assert.Equal(t, int64(23), size, "Expected block size to be length prefix + proto size")
+	})
+	t.Run("nil", func(t *testing.T) {
+		size := getBlockSize(nil /*block*/)
+		assert.Equal(t, int64(8), size, "Expected block size to be just the length prefix")
+	})
+}
+
 // TestBlockStorage is a smoke test for the whole block storage system.
 func TestBlockStorage(t *testing.T) {
 	filePath := path.Join(t.TempDir(), "test.block")

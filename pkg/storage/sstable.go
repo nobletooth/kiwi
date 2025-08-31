@@ -21,7 +21,6 @@ import (
 
 	"github.com/nobletooth/kiwi/pkg/utils"
 	kiwipb "github.com/nobletooth/kiwi/proto"
-	"google.golang.org/protobuf/proto"
 )
 
 var tmpFolder = flag.String("temp_folder", os.TempDir(), "Temporary folder for SSTable writes.")
@@ -41,13 +40,13 @@ func writeSSTable(prevId int64, pairs []Pair, path string) error {
 		return errors.New("expected the same number of prefixes and data blocks")
 	}
 
-	// Build data block offsets.
-	blocks := make([]proto.Message, len(dataBlocks))
-	for i, db := range dataBlocks {
-		blocks[i] = db
-	}
-
 	// Build header.
+	dataBlockOffsets := make([]int64, len(dataBlocks))
+	currOffset := int64(0)
+	for i, block := range dataBlocks {
+		dataBlockOffsets[i] = currOffset
+		currOffset += getBlockSize(block)
+	}
 	lastDBlockIndex := len(dataBlocks) - 1
 	lastKeyIndex := len(dataBlocks[lastDBlockIndex].GetKeys()) - 1
 	header := &kiwipb.PartHeader{
@@ -57,7 +56,7 @@ func writeSSTable(prevId int64, pairs []Pair, path string) error {
 			Prefixes:     prefixes,
 			FirstKey:     slices.Concat(prefixes[0], dataBlocks[0].GetKeys()[0]),
 			LastKey:      slices.Concat(prefixes[lastDBlockIndex], dataBlocks[lastDBlockIndex].GetKeys()[lastKeyIndex]),
-			BlockOffsets: getBlockOffsets(blocks),
+			BlockOffsets: dataBlockOffsets,
 		},
 	}
 
