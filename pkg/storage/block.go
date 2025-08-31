@@ -1,3 +1,7 @@
+// Kiwi parts are stored as multiple blocks in a single file. Each block is a protobuf message prefixed by
+// its size as a fixed 8-byte little-endian integer. Multiple blocks are concatenated together to form a complete file.
+// This file provides utilities to read and write these blocks efficiently, with support for buffering and caching.
+
 package storage
 
 import (
@@ -10,13 +14,72 @@ import (
 	"sync"
 
 	"github.com/nobletooth/kiwi/pkg/utils"
+	kiwipb "github.com/nobletooth/kiwi/proto"
 	"google.golang.org/protobuf/proto"
 )
 
+// defaultBufferSize matches the typical OS page size to reduce the number of sys calls.
 const defaultBufferSize = 4096
 
-// bufferPool allows reusing buffers to reduce allocations.
-var bufferPool = sync.Pool{New: func() any { return bytes.NewBuffer(make([]byte, 0, defaultBufferSize)) }}
+var (
+	// bufferPool allows reusing buffers both in BlockReader & BlockWriter to reduce allocations.
+	bufferPool = sync.Pool{New: func() any { return bytes.NewBuffer(make([]byte, 0, defaultBufferSize)) }}
+
+	// initCacheOnce ensures cache is reused across multiple SSTables.
+	initCacheOnce sync.Once
+	sharedCache   *BlockCache
+)
+
+// getBlockSize calculates the size of a protobuf message when stored on disk as a block.
+func getBlockSize(block proto.Message) int64 {
+	return int64(proto.Size(block) + 8)
+}
+
+// getBlockOffsets computes the starting offsets of each block.
+func getBlockOffsets(blocks []proto.Message) []int64 {
+	offsets := make([]int64, len(blocks))
+	currOffset := int64(0)
+	for i, block := range blocks {
+		offsets[i] = currOffset
+		currOffset += getBlockSize(block)
+	}
+	return offsets
+}
+
+// dbCacheKey is the cache key for a data block in the BlockCache.
+type dbCacheKey struct {
+	table     int64
+	ssTableId int64
+	offset    int64
+}
+
+// BlockCache is an in-memory cache that reduces disk reads for frequently accessed data blocks.
+// TODO: Make this an actual cache.
+type BlockCache struct {
+	mux  sync.Mutex
+	data map[dbCacheKey]*kiwipb.DataBlock
+}
+
+// getSharedCache returns the singleton shared block cache instance.
+func getSharedCache() *BlockCache {
+	initCacheOnce.Do(func() {
+		sharedCache = &BlockCache{mux: sync.Mutex{}, data: make(map[dbCacheKey]*kiwipb.DataBlock)}
+	})
+	return sharedCache
+}
+
+func (p *BlockCache) Get(table, ssTableId, offset int64) (*kiwipb.DataBlock, bool) {
+	p.mux.Lock()
+	defer p.mux.Unlock()
+	val, exists := p.data[dbCacheKey{table: table, ssTableId: ssTableId, offset: offset}]
+	return val, exists
+}
+
+func (p *BlockCache) Set(table, ssTableId, offset int64, block *kiwipb.DataBlock) {
+	p.mux.Lock()
+	defer p.mux.Unlock()
+	p.data[dbCacheKey{table: table, ssTableId: ssTableId, offset: offset}] = block
+}
 
 // BlockWriter allows writing protobuf blocks to a block file.
 type BlockWriter struct {

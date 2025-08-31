@@ -50,7 +50,7 @@ func TestBlockStorage(t *testing.T) {
 				require.NoError(t, err)
 			}
 			// Each block should be 8 bytes (length prefix) + the size of the proto message.
-			assert.Equal(t, 8+proto.Size(expected[messageIdx]), nextOffset-offset)
+			assert.Equal(t, int64(8+proto.Size(expected[messageIdx])), nextOffset-offset)
 			got = append(got, msg)
 			offset = nextOffset
 			messageIdx++
