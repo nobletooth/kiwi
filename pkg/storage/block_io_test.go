@@ -13,12 +13,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestGetSharedCache(t *testing.T) {
-	cache1 := getSharedCache()
-	cache2 := getSharedCache()
-	assert.Same(t, cache1, cache2, "Expected both calls to return the same cache instance")
-}
-
 func TestGetBlockSize(t *testing.T) {
 	t.Run("non-nil", func(t *testing.T) {
 		record := &kiwipb.TestRecord{Id: 123, Name: "test_record"}

@@ -14,7 +14,6 @@ import (
 	"sync"
 
 	"github.com/nobletooth/kiwi/pkg/utils"
-	kiwipb "github.com/nobletooth/kiwi/proto"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -24,46 +23,7 @@ const defaultBufferSize = 4096
 var (
 	// bufferPool allows reusing buffers both in BlockReader & BlockWriter to reduce allocations.
 	bufferPool = sync.Pool{New: func() any { return bytes.NewBuffer(make([]byte, 0, defaultBufferSize)) }}
-
-	// initCacheOnce ensures cache is reused across multiple SSTables.
-	initCacheOnce sync.Once
-	sharedCache   *BlockCache
 )
-
-// dbCacheKey is the cache key for a data block in the BlockCache.
-type dbCacheKey struct {
-	table     int64
-	ssTableId int64
-	offset    int64
-}
-
-// BlockCache is an in-memory cache that reduces disk reads for frequently accessed data blocks.
-// TODO: Make this an actual cache.
-type BlockCache struct {
-	mux  sync.Mutex
-	data map[dbCacheKey]*kiwipb.DataBlock
-}
-
-// getSharedCache returns the singleton shared block cache instance.
-func getSharedCache() *BlockCache {
-	initCacheOnce.Do(func() {
-		sharedCache = &BlockCache{mux: sync.Mutex{}, data: make(map[dbCacheKey]*kiwipb.DataBlock)}
-	})
-	return sharedCache
-}
-
-func (p *BlockCache) Get(table, ssTableId, offset int64) (*kiwipb.DataBlock, bool) {
-	p.mux.Lock()
-	defer p.mux.Unlock()
-	val, exists := p.data[dbCacheKey{table: table, ssTableId: ssTableId, offset: offset}]
-	return val, exists
-}
-
-func (p *BlockCache) Set(table, ssTableId, offset int64, block *kiwipb.DataBlock) {
-	p.mux.Lock()
-	defer p.mux.Unlock()
-	p.data[dbCacheKey{table: table, ssTableId: ssTableId, offset: offset}] = block
-}
 
 // getBlockSize calculates the size of a protobuf message when stored on disk as a block.
 func getBlockSize(block proto.Message) int64 {

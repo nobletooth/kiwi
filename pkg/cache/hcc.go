@@ -63,8 +63,8 @@ type HyperClock[K comparable, V any] struct {
 // NewHyperClock is the constructor for HyperClock. It initializes the cache with the given capacity,
 // eviction callback, and tick interval. It also starts the background reaper goroutine for handling expirations.
 // NOTE: eviction callback function must not call any of the cache methods or else we'll be having a deadlock.
-func NewHyperClock[K comparable, V any](ctx context.Context, capacity int, evictionCallback func(K, V),
-	tickInterval time.Duration) *HyperClock[K, V] {
+func NewHyperClock[K comparable, V any](ctx context.Context, capacity int, tickInterval time.Duration,
+	evictionCallback func(K, V)) *HyperClock[K, V] {
 	// Ensure capacity is at least 1.
 	if capacity <= 0 {
 		utils.RaiseInvariant("hcc", "negative_cache_capacity",

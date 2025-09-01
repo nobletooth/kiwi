@@ -12,7 +12,7 @@ import (
 
 func TestHyperClock_AddAndGet(t *testing.T) {
 	ctx := context.Background()
-	clockCache := NewHyperClock[string, string](ctx, 5, nil /*evictionCallback*/, time.Second /*tickInterval*/)
+	clockCache := NewHyperClock[string, string](ctx, 5, time.Second /*tickInterval*/, nil /*evictionCallback*/)
 
 	wasEvicted := clockCache.Add("key1", "value1", time.Minute)
 	assert.False(t, wasEvicted, "Should not evict when cache is not full")
@@ -27,7 +27,7 @@ func TestHyperClock_AddAndGet(t *testing.T) {
 
 func TestHyperClock_UpdateKey(t *testing.T) {
 	ctx := context.Background()
-	clockCache := NewHyperClock[string, int](ctx, 2, nil /*evictionCallback*/, time.Second /*tickInterval*/)
+	clockCache := NewHyperClock[string, int](ctx, 2, time.Second /*tickInterval*/, nil /*evictionCallback*/)
 
 	clockCache.Add("key1", 100, time.Minute)
 	clockCache.Add("key2", 200, time.Minute)
@@ -44,7 +44,7 @@ func TestHyperClock_UpdateKey(t *testing.T) {
 
 func TestHyperClock_EvictionPolicy(t *testing.T) {
 	ctx := context.Background()
-	clockCache := NewHyperClock[int, string](ctx, 2, nil /*evictionCallback*/, time.Second /*tickInterval*/)
+	clockCache := NewHyperClock[int, string](ctx, 2, time.Second /*tickInterval*/, nil /*evictionCallback*/)
 
 	// Fill the cache.
 	clockCache.Add(1, "one", time.Minute)
@@ -86,7 +86,7 @@ func TestHyperClock_EvictionCallback(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	clockCache := NewHyperClock[int, string](ctx, 1, evictionCallback, time.Second /*tickInterval*/)
+	clockCache := NewHyperClock[int, string](ctx, 1, time.Second /*tickInterval*/, evictionCallback)
 
 	// Fill the cache.
 	clockCache.Add(10, "ten", time.Minute)
@@ -103,7 +103,7 @@ func TestHyperClock_EvictionCallback(t *testing.T) {
 
 func TestHyperClock_GetExpired(t *testing.T) {
 	ctx := context.Background()
-	clockCache := NewHyperClock[string, int](ctx, 5, nil /*evictionCallback*/, time.Millisecond /*tickInterval*/)
+	clockCache := NewHyperClock[string, int](ctx, 5, time.Millisecond /*tickInterval*/, nil /*evictionCallback*/)
 
 	clockCache.Add("key1", 1, 20*time.Millisecond)
 
@@ -116,7 +116,7 @@ func TestHyperClock_GetExpired(t *testing.T) {
 
 func TestHyperClock_Reaper(t *testing.T) {
 	ctx := context.Background()
-	clockCache := NewHyperClock[string, int](ctx, 10, nil /*evictionCallback*/, time.Millisecond /*tickInterval*/)
+	clockCache := NewHyperClock[string, int](ctx, 10, time.Millisecond /*tickInterval*/, nil /*evictionCallback*/)
 
 	clockCache.Add("key1", 1, 50*time.Millisecond)
 	clockCache.Add("key2", 2, 60*time.Millisecond)
@@ -136,7 +136,7 @@ func TestHyperClock_Concurrency(t *testing.T) {
 	itemsPerGoroutine := 50
 
 	ctx := context.Background()
-	clockCache := NewHyperClock[string, int](ctx, 1000, nil /*evictionCallback*/, time.Second /*tickInterval*/)
+	clockCache := NewHyperClock[string, int](ctx, 1000, time.Second /*tickInterval*/, nil /*evictionCallback*/)
 	var wg sync.WaitGroup
 
 	// Concurrent writers.
