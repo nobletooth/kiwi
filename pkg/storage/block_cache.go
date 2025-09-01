@@ -85,7 +85,13 @@ func newBlockCache() *BlockCache {
 
 // Get retrieves a data block from the cache.
 func (p *BlockCache) Get(table, ssTableId, offset int64) (*kiwipb.DataBlock, bool) {
-	return p.internalCache.Get(dbCacheKey{table: table, ssTableId: ssTableId, offset: offset})
+	db, found := p.internalCache.Get(dbCacheKey{table: table, ssTableId: ssTableId, offset: offset})
+	if found {
+		cacheLookups.WithLabelValues("hit").Inc()
+	} else {
+		cacheLookups.WithLabelValues("miss").Inc()
+	}
+	return db, found
 }
 
 // Set adds a data block to the cache.
