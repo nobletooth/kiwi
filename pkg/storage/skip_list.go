@@ -14,33 +14,41 @@
 package storage
 
 import (
-	"cmp"
 	"errors"
 	"math/rand"
 	"time"
 )
 
+// CompareFn defines a three-way comparison for keys of type K.
+// It must return a negative value if x < y, 0 if x == y, and a positive value if x > y.
+type CompareFn[K any] func(x, y K) int
+
 // skipListNode represents a node in the skip list.
-type skipListNode[K cmp.Ordered, V any] struct {
+type skipListNode[K any, V any] struct {
 	key      K
 	value    V
 	forwards []*skipListNode[K, V] // forward pointers per level (0..level-1)
 }
 
-// SkipList is a probabilistically balanced ordered map over comparable keys.
-// Keys are strictly ordered using cmp.Compare from the standard library.
+// SkipList is a probabilistically balanced ordered map over keys of any type.
+// Key ordering is defined by a user-supplied CompareFn passed to the constructor.
 // The structure maintains up to maxLevel layers; each node appears in level i
 // with probability p^i (independently), enabling logarithmic expected search.
-type SkipList[K cmp.Ordered, V any] struct {
+type SkipList[K any, V any] struct {
 	head            *skipListNode[K, V]
 	level, maxLevel int
 	p               float64 // Probability that a node is promoted to the next level.
 	rnd             *rand.Rand
+	compare         CompareFn[K]
 }
 
 // NewSkipList creates a new empty skip list.
+// The compare function defines the total ordering over keys.
 // Defaults: maxLevel=16, p=0.25.
-func NewSkipList[K cmp.Ordered, V any]() *SkipList[K, V] {
+func NewSkipList[K any, V any](compare CompareFn[K]) *SkipList[K, V] {
+	if compare == nil {
+		panic("SkipList requires a non-nil compare function")
+	}
 	const defaultMaxLevel = 16
 	const defaultP = 0.25
 	return &SkipList[K, V]{
@@ -49,6 +57,7 @@ func NewSkipList[K cmp.Ordered, V any]() *SkipList[K, V] {
 		maxLevel: defaultMaxLevel,
 		p:        defaultP,
 		rnd:      rand.New(rand.NewSource(time.Now().UnixNano())),
+		compare:  compare,
 	}
 }
 
@@ -72,13 +81,13 @@ func (s *SkipList[K, V]) Get(key K) (V, error) {
 	n := s.head
 	// Traverse from top level down to level 0.
 	for lvl := s.level - 1; lvl >= 0; lvl-- {
-		for next := n.forwards[lvl]; next != nil && cmp.Compare(next.key, key) < 0; next = n.forwards[lvl] {
+		for next := n.forwards[lvl]; next != nil && s.compare(next.key, key) < 0; next = n.forwards[lvl] {
 			n = next
 		}
 	}
 	// Candidate is at level 0 forward from n.
 	n = n.forwards[0]
-	if n != nil && cmp.Compare(n.key, key) == 0 {
+	if n != nil && s.compare(n.key, key) == 0 {
 		return n.value, nil
 	}
 	return zero, ErrKeyNotFound
@@ -93,15 +102,15 @@ func (s *SkipList[K, V]) Set(key K, value V) error {
 	}
 	// Track the last nodes before the position at each level.
 	update := make([]*skipListNode[K, V], s.maxLevel)
-	node := s.head
+	n := s.head
 	for lvl := s.level - 1; lvl >= 0; lvl-- {
-		for next := node.forwards[lvl]; next != nil && cmp.Compare(next.key, key) < 0; next = node.forwards[lvl] {
-			node = next
+		for next := n.forwards[lvl]; next != nil && s.compare(next.key, key) < 0; next = n.forwards[lvl] {
+			n = next
 		}
-		update[lvl] = node
+		update[lvl] = n
 	}
 	// Check if the key already exists at level 0.
-	if next := node.forwards[0]; next != nil && cmp.Compare(next.key, key) == 0 {
+	if next := n.forwards[0]; next != nil && s.compare(next.key, key) == 0 {
 		next.value = value
 		return nil
 	}
@@ -131,13 +140,13 @@ func (s *SkipList[K, V]) Delete(key K) error {
 	update := make([]*skipListNode[K, V], s.maxLevel)
 	n := s.head
 	for lvl := s.level - 1; lvl >= 0; lvl-- {
-		for next := n.forwards[lvl]; next != nil && cmp.Compare(next.key, key) < 0; next = n.forwards[lvl] {
+		for next := n.forwards[lvl]; next != nil && s.compare(next.key, key) < 0; next = n.forwards[lvl] {
 			n = next
 		}
 		update[lvl] = n
 	}
 	target := n.forwards[0]
-	if target == nil || cmp.Compare(target.key, key) != 0 {
+	if target == nil || s.compare(target.key, key) != 0 {
 		return ErrKeyNotFound
 	}
 	for i := 0; i < s.level; i++ {
