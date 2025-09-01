@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	promclient "github.com/prometheus/client_model/go"
 )
 
 var invariantsMetric = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -35,9 +36,19 @@ var invariantsMetric = promauto.NewCounterVec(prometheus.CounterOpts{
 })
 
 func RaiseInvariant(module, invariantType, msg string, args ...any) {
-	invariantsMetric.WithLabelValues(invariantType).Inc()
+	invariantsMetric.WithLabelValues(module, invariantType).Inc()
 	slog.With("invariant", invariantType, "module", module).Error(msg, args...)
 	if IsTestMode {
 		panic("invariant violated: " + invariantType)
 	}
+}
+
+// GetMetricValue returns the current value of invariant metric with labels `invariantLabel` and `owner`.
+func GetMetricValue(module, invariantType string) int {
+	var metric = &promclient.Metric{}
+	if err := invariantsMetric.WithLabelValues(module, invariantType).Write(metric); err != nil {
+		slog.Error(err.Error())
+		return 0
+	}
+	return int(metric.Counter.GetValue())
 }
