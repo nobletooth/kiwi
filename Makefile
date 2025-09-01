@@ -27,7 +27,7 @@ kiwi: $(SRCS) | .bins proto ## To build the kiwi binary.
 	@echo "Building kiwi done."
 
 test: $(SRCS) | proto ## To run tests.
-	@go test -ldflags="$(TEST_LD_FLAGS)" -v ./...
+	@go test -ldflags="$(TEST_LD_FLAGS)" ./...
 
 run: kiwi ## To run a minimal kiwi server.
 	@./bin/kiwi $(filter-out $@,$(MAKECMDGOALS))
