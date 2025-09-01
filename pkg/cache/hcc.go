@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nobletooth/kiwi/pkg/types"
 	"github.com/nobletooth/kiwi/pkg/utils"
 )
 
@@ -46,12 +47,12 @@ func getTimeBucket(timestamp time.Time, tickInterval time.Duration) time.Time {
 type HyperClock[K comparable, V any] struct {
 	capacity int // Maximum number of entries the cache can hold.
 	// hand is the "clock hand" that points to the next candidate for eviction in the circular list.
-	hand  *linkedListNode[*expirableClockCacheEntry[K, V]]
-	index map[K]*linkedListNode[*expirableClockCacheEntry[K, V]] // Provides lookup for an entry by its key.
+	hand  *types.LinkedListNode[*expirableClockCacheEntry[K, V]]
+	index map[K]*types.LinkedListNode[*expirableClockCacheEntry[K, V]] // Provides lookup for an entry by its key.
 	// circularBuffer allows the hand to sweep over keys for the CLOCK eviction.
-	circularBuffer *linkedList[*expirableClockCacheEntry[K, V]]
+	circularBuffer *types.LinkedList[*expirableClockCacheEntry[K, V]]
 	// expiryBuckets indexes cache entries to allow expiring a batch of keys together.
-	expiryBuckets map[time.Time]map[K]*linkedListNode[*expirableClockCacheEntry[K, V]]
+	expiryBuckets map[time.Time]map[K]*types.LinkedListNode[*expirableClockCacheEntry[K, V]]
 	tickInterval  time.Duration // Rate of reaper goroutine removing expired keys.
 	reaperHand    time.Time     // Next bucket to be cleared by the reaper goroutine.
 	// evictionCallback is an optional callback function that is executed when an entry is evicted. This function is run
@@ -73,9 +74,9 @@ func NewHyperClock[K comparable, V any](ctx context.Context, capacity int, tickI
 	}
 	clockCache := &HyperClock[K, V]{
 		capacity:         capacity,
-		index:            make(map[K]*linkedListNode[*expirableClockCacheEntry[K, V]], capacity),
-		circularBuffer:   new(linkedList[*expirableClockCacheEntry[K, V]]),
-		expiryBuckets:    make(map[time.Time]map[K]*linkedListNode[*expirableClockCacheEntry[K, V]], capacity),
+		index:            make(map[K]*types.LinkedListNode[*expirableClockCacheEntry[K, V]], capacity),
+		circularBuffer:   new(types.LinkedList[*expirableClockCacheEntry[K, V]]),
+		expiryBuckets:    make(map[time.Time]map[K]*types.LinkedListNode[*expirableClockCacheEntry[K, V]], capacity),
 		tickInterval:     tickInterval,
 		reaperHand:       getTimeBucket(time.Now(), tickInterval),
 		evictionCallback: evictionCallback,
@@ -101,10 +102,10 @@ func (c *HyperClock[K, V]) Get(key K) (V, bool /*found*/) {
 	return entry.Value.value, true
 }
 
-func (c *HyperClock[K, V]) addEntryToExpiryBucket(entry *linkedListNode[*expirableClockCacheEntry[K, V]]) {
+func (c *HyperClock[K, V]) addEntryToExpiryBucket(entry *types.LinkedListNode[*expirableClockCacheEntry[K, V]]) {
 	bucket := getTimeBucket(entry.Value.expiresAt, c.tickInterval)
 	if _, bucketExists := c.expiryBuckets[bucket]; !bucketExists {
-		c.expiryBuckets[bucket] = make(map[K]*linkedListNode[*expirableClockCacheEntry[K, V]])
+		c.expiryBuckets[bucket] = make(map[K]*types.LinkedListNode[*expirableClockCacheEntry[K, V]])
 	}
 	c.expiryBuckets[bucket][entry.Value.key] = entry
 }

@@ -1,46 +1,46 @@
-package cache
+package types
 
-// linkedListNode represents a node in the doubly linked list.
-type linkedListNode[V any] struct {
-	next  *linkedListNode[V]
-	prev  *linkedListNode[V]
+// LinkedListNode represents a node in the doubly linked list.
+type LinkedListNode[V any] struct {
+	next  *LinkedListNode[V]
+	prev  *LinkedListNode[V]
 	Value V
 }
 
 // Next returns the next node in the list.
-func (n *linkedListNode[V]) Next() *linkedListNode[V] {
+func (n *LinkedListNode[V]) Next() *LinkedListNode[V] {
 	return n.next
 }
 
 // Prev returns the previous node in the list.
-func (n *linkedListNode[V]) Prev() *linkedListNode[V] {
+func (n *LinkedListNode[V]) Prev() *LinkedListNode[V] {
 	return n.prev
 }
 
-// linkedList represents a doubly linked list.
-type linkedList[V any] struct {
-	head *linkedListNode[V]
-	tail *linkedListNode[V]
+// LinkedList represents a doubly linked list.
+type LinkedList[V any] struct {
+	head *LinkedListNode[V]
+	tail *LinkedListNode[V]
 	size int
 }
 
 // Len returns the number of elements in the list.
-func (l *linkedList[V]) Len() int {
+func (l *LinkedList[V]) Len() int {
 	return l.size
 }
 
 // Front returns the first node of the list or nil if the list is empty.
-func (l *linkedList[V]) Front() *linkedListNode[V] {
+func (l *LinkedList[V]) Front() *LinkedListNode[V] {
 	return l.head
 }
 
 // Back returns the last node of the list or nil if the list is empty.
-func (l *linkedList[V]) Back() *linkedListNode[V] {
+func (l *LinkedList[V]) Back() *LinkedListNode[V] {
 	return l.tail
 }
 
 // Remove removes a node from the list.
-func (l *linkedList[V]) Remove(n *linkedListNode[V]) {
+func (l *LinkedList[V]) Remove(n *LinkedListNode[V]) {
 	if n.prev != nil {
 		n.prev.next = n.next
 	} else {
@@ -63,8 +63,8 @@ func (l *linkedList[V]) Remove(n *linkedListNode[V]) {
 }
 
 // PushFront adds a new value to the front of the list.
-func (l *linkedList[V]) PushFront(v V) *linkedListNode[V] {
-	n := &linkedListNode[V]{Value: v, next: l.head}
+func (l *LinkedList[V]) PushFront(v V) *LinkedListNode[V] {
+	n := &LinkedListNode[V]{Value: v, next: l.head}
 	if l.head != nil {
 		l.head.prev = n
 	} else { // List was empty.
@@ -76,8 +76,8 @@ func (l *linkedList[V]) PushFront(v V) *linkedListNode[V] {
 }
 
 // PushBack adds a new value to the back of the list.
-func (l *linkedList[V]) PushBack(v V) *linkedListNode[V] {
-	n := &linkedListNode[V]{Value: v, prev: l.tail}
+func (l *LinkedList[V]) PushBack(v V) *LinkedListNode[V] {
+	n := &LinkedListNode[V]{Value: v, prev: l.tail}
 	if l.tail != nil {
 		l.tail.next = n
 	} else {

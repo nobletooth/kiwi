@@ -1,4 +1,4 @@
-package cache
+package types
 
 import (
 	"slices"
@@ -8,7 +8,7 @@ import (
 )
 
 // assertLinkedListEqualsSlice makes sure the list elements match the linked list elements.
-func assertLinkedListEqualsSlice[V comparable](t *testing.T, expected []V, list *linkedList[V]) {
+func assertLinkedListEqualsSlice[V comparable](t *testing.T, expected []V, list *LinkedList[V]) {
 	t.Helper()
 
 	assert.Equal(t, len(expected), list.Len(), "List length mismatch")
@@ -44,7 +44,7 @@ func assertLinkedListEqualsSlice[V comparable](t *testing.T, expected []V, list 
 
 func TestLinkedList_Push(t *testing.T) {
 	t.Run("PushBack", func(t *testing.T) {
-		list := new(linkedList[int])
+		list := new(LinkedList[int])
 		list.PushBack(1)
 		assertLinkedListEqualsSlice(t, []int{1}, list)
 		list.PushBack(2)
@@ -52,9 +52,8 @@ func TestLinkedList_Push(t *testing.T) {
 		list.PushBack(3)
 		assertLinkedListEqualsSlice(t, []int{1, 2, 3}, list)
 	})
-
 	t.Run("PushFront", func(t *testing.T) {
-		list := new(linkedList[int])
+		list := new(LinkedList[int])
 		list.PushFront(1)
 		assertLinkedListEqualsSlice(t, []int{1}, list)
 		list.PushFront(2)
@@ -62,9 +61,8 @@ func TestLinkedList_Push(t *testing.T) {
 		list.PushFront(3)
 		assertLinkedListEqualsSlice(t, []int{3, 2, 1}, list)
 	})
-
 	t.Run("Mixed Push", func(t *testing.T) {
-		list := new(linkedList[int])
+		list := new(LinkedList[int])
 		list.PushBack(2)
 		list.PushFront(1)
 		list.PushBack(3)
@@ -74,9 +72,9 @@ func TestLinkedList_Push(t *testing.T) {
 
 func TestLinkedList_Remove(t *testing.T) {
 	// Helper to create a list for testing removal.
-	newLinkedListWithNodes := func(nodeCount int) (*linkedList[int], []*linkedListNode[int]) {
-		list := new(linkedList[int])
-		nodes := make([]*linkedListNode[int], nodeCount)
+	newLinkedListWithNodes := func(nodeCount int) (*LinkedList[int], []*LinkedListNode[int]) {
+		list := new(LinkedList[int])
+		nodes := make([]*LinkedListNode[int], nodeCount)
 		for i := 1; i <= nodeCount; i++ {
 			nodes[i-1] = list.PushBack(i)
 		}
@@ -93,19 +91,16 @@ func TestLinkedList_Remove(t *testing.T) {
 		assert.Equal(t, nodes[3], nodes[1].Next(), "Node 2's next should be node 4")
 		assert.Equal(t, nodes[1], nodes[3].Prev(), "Node 4's prev should be node 2")
 	})
-
 	t.Run("Remove head", func(t *testing.T) {
 		list, nodes := newLinkedListWithNodes(5)
 		list.Remove(nodes[0]) // Remove 1.
 		assertLinkedListEqualsSlice(t, []int{2, 3, 4, 5}, list)
 	})
-
 	t.Run("Remove tail", func(t *testing.T) {
 		list, nodes := newLinkedListWithNodes(5)
 		list.Remove(nodes[4]) // Remove 5.
 		assertLinkedListEqualsSlice(t, []int{1, 2, 3, 4}, list)
 	})
-
 	t.Run("Remove until empty", func(t *testing.T) {
 		list, nodes := newLinkedListWithNodes(5)
 		for i := 0; i < len(nodes); i++ {
@@ -113,9 +108,8 @@ func TestLinkedList_Remove(t *testing.T) {
 		}
 		assertLinkedListEqualsSlice(t, []int{}, list)
 	})
-
 	t.Run("Remove the only element", func(t *testing.T) {
-		list := new(linkedList[int])
+		list := new(LinkedList[int])
 		node := list.PushBack(1)
 		list.Remove(node)
 		assertLinkedListEqualsSlice(t, []int{}, list)
