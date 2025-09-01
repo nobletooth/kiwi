@@ -12,6 +12,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,11 +20,31 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/nobletooth/kiwi/pkg/utils"
 	kiwipb "github.com/nobletooth/kiwi/proto"
 )
 
-var tmpFolder = flag.String("temp_folder", os.TempDir(), "Temporary folder for SSTable writes.")
+var (
+	tmpFolder = flag.String("temp_folder", os.TempDir(), "Temporary folder for SSTable writes.")
+
+	bfIndexFalsePositiveRate = flag.Float64("bloom_filter_false_positive_rate", 0.01,
+		"A ratio in [0.0, 1.0] that indicates the desired false positive rate for the bloom filter index of"+
+			" each datablock.")
+	bfIndexMinKeys = flag.Uint("bloom_filter_min_keys", 5,
+		"The minimum number of keys in a data block to create a bloom filter index for it.")
+)
+
+// getBloomFalsePositiveRate returns a clipped false positive rate for the bloom filter index to avoid panics.
+func getBloomFalsePositiveRate() float64 {
+	if *bfIndexFalsePositiveRate > 0.0 && *bfIndexFalsePositiveRate < 1.0 {
+		return *bfIndexFalsePositiveRate
+	}
+	utils.RaiseInvariant("sstable", "invalid_bloom_filter_rate",
+		"Bloom filter false positive rate must be in (0.0, 1.0). Using default value 0.01.",
+		"providedRate", *bfIndexFalsePositiveRate)
+	return 0.01
+}
 
 // writeSSTable writes the given key-value pairs to an SSTable file at the specified path.
 func writeSSTable(prevId int64, pairs []Pair, path string) error {
@@ -42,18 +63,34 @@ func writeSSTable(prevId int64, pairs []Pair, path string) error {
 
 	// Build header.
 	dataBlockOffsets := make([]int64, len(dataBlocks))
-	currBlockOffset := int64(0)
+	lastBlockOffset := int64(0)
 	firstKeys := make([][]byte, len(dataBlocks))
 	for i, block := range dataBlocks {
-		dataBlockOffsets[i] = currBlockOffset
-		currBlockOffset += getBlockSize(block)
+		dataBlockOffsets[i] = lastBlockOffset
+		lastBlockOffset += getBlockSize(block)
 		firstKeys[i] = slices.Concat(prefixes[i], block.GetKeys()[0])
 	}
 	lastDBlockIndex := len(dataBlocks) - 1
 	lastKeyIndex := len(dataBlocks[lastDBlockIndex].GetKeys()) - 1
+	// Optionally create a bloom filter index for this SSTable.
+	var bf *kiwipb.PartHeader_BloomFilterIndex
+	if len(pairs) >= int(*bfIndexMinKeys) {
+		bfIndex := bloom.NewWithEstimates(uint(len(pairs)), getBloomFalsePositiveRate())
+		for _, pair := range pairs {
+			bfIndex.Add(pair.Key)
+		}
+		bf = &kiwipb.PartHeader_BloomFilterIndex{
+			NumBits:      uint64(bfIndex.Cap()),
+			NumHashFuncs: uint64(bfIndex.K()),
+			BitArray:     bfIndex.BitSet().Words(),
+		}
+		slog.Info("Constructed bloom filter for sstable.", "path", path, "numKeys", len(pairs),
+			"numBits", bf.NumBits, "numHashFuncs", bf.NumHashFuncs)
+	}
 	header := &kiwipb.PartHeader{
 		Id:       prevId + 1,
 		PrevPart: prevId,
+		BfIndex:  bf,
 		SkipIndex: &kiwipb.PartHeader_SkipIndex{
 			Prefixes:     prefixes,
 			FirstKeys:    firstKeys,
@@ -96,7 +133,6 @@ func writeSSTable(prevId int64, pairs []Pair, path string) error {
 }
 
 // SSTable represents a single immutable sorted string table stored on disk.
-// TODO Add Bloom filter index.
 type SSTable struct {
 	mux    sync.Mutex // Protects against concurrent files.
 	closed bool
@@ -106,11 +142,13 @@ type SSTable struct {
 	file            *os.File           // A readonly file used by blockReader.
 	dataBlockOffset int64              // The byte offset where data blocks start in the file.
 	header          *kiwipb.PartHeader // Eagerly loaded into memory.
+	bloomFilter     *bloom.BloomFilter // Optional bloom filter for the entire SSTable key space.
 	sharedCache     *BlockCache        // Allows access to data blocks.
 }
 
 // NewSSTable is the constructor for SSTable.
 func NewSSTable(filePath string) (*SSTable, error) {
+	slog.Debug("Opening SSTable file.", "filePath", filePath)
 	// Each SSTable is a single file stored in a directory named after its table id.
 	// The file name is the sstable id, e.g. /path/to/data/123/456.sst
 	dir := filepath.Base(filepath.Dir(filePath))
@@ -133,12 +171,29 @@ func NewSSTable(filePath string) (*SSTable, error) {
 	if _, err := bw.ReadBlock(0 /*offset*/, partHeader); err != nil {
 		return nil, fmt.Errorf("failed to read sstable part header: %w", err)
 	}
+	headerSize := getBlockSize(partHeader)
+
+	// Instantiate the optional bloom filter.
+	var bf *bloom.BloomFilter
+	if bfIndex := partHeader.GetBfIndex(); bfIndex != nil {
+		slog.Debug("Loading bloom filter for sstable", "table", table, "part", partHeader.GetId())
+		bf = bloom.FromWithM(bfIndex.GetBitArray(), uint(bfIndex.GetNumBits()), uint(bfIndex.GetNumHashFuncs()))
+		if bf == nil {
+			utils.RaiseInvariant("sstable", "bloom_filter_corruption", "Failed to load bloom filter from sstable.",
+				"table", table, "part", partHeader.GetId())
+		} else {
+			slog.Debug("Loaded bloom filter for sstable", "table", table, "part", partHeader.GetId(),
+				"numBits", bfIndex.GetNumBits(), "numHashFuncs", bfIndex.GetNumHashFuncs())
+		}
+		// Free memory used by the protobuf bloom filter index, as it's no longer needed.
+		partHeader.BfIndex = nil
+	}
 
 	ssTable := &SSTable{
-		blockReader: bw, file: file, table: table,
+		blockReader: bw, file: file, table: table, bloomFilter: bf,
 		header: partHeader, sharedCache: getSharedCache(), closed: false,
 		// The data blocks start right after the header block.
-		dataBlockOffset: getBlockSize(partHeader),
+		dataBlockOffset: headerSize,
 	}
 	// Call Close when the object is garbage collected.
 	runtime.SetFinalizer(ssTable, func(ssTable *SSTable) { _ = ssTable.Close() })
@@ -216,16 +271,24 @@ func (s *SSTable) GetPrevTablePath() (string /*filePath*/, bool /*hasPrevious*/)
 func (s *SSTable) Get(key []byte) ([]byte, error) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
+
 	// When the SSTable is closed, we cannot read from it anymore.
 	if s.closed {
 		return nil, errors.New("sstable is closed")
 	}
-	// First, check if the key is within the min/max range of the SSTable.
+
+	// Check if the key is within the min/max range of the SSTable.
 	skipIndex := s.header.GetSkipIndex()
 	if bytes.Compare(key, skipIndex.GetFirstKeys()[0]) < 0 || bytes.Compare(key, skipIndex.GetLastKey()) > 0 {
 		return nil, ErrKeyNotFound
 	}
-	// The key is within the range, so we need to scan the data blocks.
+
+	// The bloom filter can show when the key is definitely not in this SSTable.
+	// On false positives, we still need to scan the data blocks.
+	if s.bloomFilter != nil && !s.bloomFilter.Test(key) {
+		return nil, ErrKeyNotFound
+	}
+
 	return s.getFromDataBlocks(key)
 }
 

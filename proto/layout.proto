@@ -33,11 +33,12 @@ message PartHeader {// Always at the beginning of a part file and loaded into me
     repeated int64 block_offsets = 4; // Relative offset to the start of each data block in the data section.
   }
 
+  // NOTE: Bloom filter index is not stored as a gob, but we use protobuf instead for better on-disk size.
   BloomFilterIndex bf_index = 4; // In-memory Bloom filter for the entire part (optional).
   message BloomFilterIndex {// Allows skipping the entire part when keys are not present.
-    int64 num_bits = 1;       // Number of bits in the Bloom filter.
-    int32 num_hash_funcs = 2; // Number of hash functions used.
-    bytes bit_array = 3;      // Bit array representing the Bloom filter.
+    uint64 num_bits = 1;           // Number of bits in the Bloom filter.
+    uint64 num_hash_funcs = 2;     // Number of hash functions used.
+    repeated uint64 bit_array = 3; // Bit array representing the Bloom filter.
   }
 }
 
