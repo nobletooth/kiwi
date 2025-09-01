@@ -1,4 +1,4 @@
-package types
+package cache
 
 // LinkedListNode represents a node in the doubly linked list.
 type LinkedListNode[V any] struct {
