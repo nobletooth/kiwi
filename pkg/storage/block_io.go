@@ -20,10 +20,8 @@ import (
 // defaultBufferSize matches the typical OS page size to reduce the number of sys calls.
 const defaultBufferSize = 4096
 
-var (
-	// bufferPool allows reusing buffers both in BlockReader & BlockWriter to reduce allocations.
-	bufferPool = sync.Pool{New: func() any { return bytes.NewBuffer(make([]byte, 0, defaultBufferSize)) }}
-)
+// bufferPool allows reusing buffers both in BlockReader & BlockWriter to reduce allocations.
+var bufferPool = sync.Pool{New: func() any { return bytes.NewBuffer(make([]byte, 0, defaultBufferSize)) }}
 
 // getBlockSize calculates the size of a protobuf message when stored on disk as a block.
 func getBlockSize(block proto.Message) int64 {

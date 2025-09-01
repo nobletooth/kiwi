@@ -16,7 +16,7 @@ var (
 	initCacheOnce sync.Once
 	sharedCache   *BlockCache
 
-	cacheCapacity = flag.Int("block_cache_capacity", 1000,
+	cacheCapacity = flag.Int("block_cache_capacity", 5,
 		"The maximum number of blocks to keep in the shared block cache.")
 	cacheShardCount = flag.Int("block_cache_shard_count", runtime.NumCPU(),
 		"The number of shards to keep in the block cache.")
