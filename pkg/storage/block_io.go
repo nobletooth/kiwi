@@ -1,6 +1,6 @@
 // Kiwi parts are stored as multiple blocks in a single file. Each block is a protobuf message prefixed by
 // its size as a fixed 8-byte little-endian integer. Multiple blocks are concatenated together to form a complete file.
-// This file provides utilities to read and write these blocks efficiently, with support for buffering and caching.
+// This file provides utilities to read and write these blocks efficiently w/ buffers.
 
 package storage
 

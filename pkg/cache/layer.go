@@ -16,3 +16,34 @@ type Layer[K comparable, V any] interface {
 	Keys() []K // Returns a slice of all keys currently in the cache.
 	Purge()    // Removes all items from the cache.
 }
+
+// NoOp is a cache layer that doesn't store any items.
+// It is used when cache is disabled.
+type NoOp[K comparable, V any] struct { // Implements Layer.
+}
+
+var _ Layer[int, int] = (*NoOp[int, int])(nil)
+
+// NewNoOp returns a no-operation cache layer that does not store any items.
+func NewNoOp[K comparable, V any]() *NoOp[K, V] {
+	return &NoOp[K, V]{}
+}
+
+// Get always returns false, indicating the key is not found.
+func (n *NoOp[K, V]) Get(key K) (V, bool) {
+	var zero V
+	return zero, false
+}
+
+// Add does nothing and always returns false, indicating no item was evicted.
+func (n *NoOp[K, V]) Add(key K, value V, ttl time.Duration) bool {
+	return false
+}
+
+// Keys always returns nil, as there are no keys stored.
+func (n *NoOp[K, V]) Keys() []K {
+	return nil
+}
+
+// Purge does nothing, as there are no items to remove.
+func (n *NoOp[K, V]) Purge() {}
