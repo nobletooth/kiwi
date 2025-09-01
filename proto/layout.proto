@@ -28,7 +28,7 @@ message PartHeader {// Always at the beginning of a part file and loaded into me
   SkipIndex skip_index = 3; // In-memory skip index for the entire part.
   message SkipIndex {// Entries are sorted by key / prefix.
     repeated bytes prefixes = 1;      // Common prefix for all keys in each data block; May be empty.
-    bytes first_key = 2;              // The first key in the whole data blocks (including the common prefix).
+    repeated bytes first_keys = 2;    // The first key in each data block (including the common prefix).
     bytes last_key = 3;               // The last key in the whole data blocks (including the common prefix).
     repeated int64 block_offsets = 4; // Relative offset to the start of each data block in the data section.
   }
