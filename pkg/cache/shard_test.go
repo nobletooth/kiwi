@@ -10,13 +10,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// fakeCache is a simple map-based implementation of the Cache interface for testing purposes. It is not thread-safe.
+// fakeCache is a simple map-based implementation of the Layer interface for testing purposes. It is not thread-safe.
 type fakeCache[K comparable, V any] struct {
 	items map[K]V
 }
 
 // newFakeCache is the constructor for fakeCache.
-func newFakeCache[K comparable, V any]() Cache[K, V] {
+func newFakeCache[K comparable, V any]() Layer[K, V] {
 	return &fakeCache[K, V]{items: make(map[K]V)}
 }
 
@@ -44,7 +44,7 @@ func (m *fakeCache[K, V]) Purge() {
 
 // TestShardedCache_AddAndGet verifies the basic Add and Get functionality.
 func TestShardedCache_AddAndGet(t *testing.T) {
-	sc := NewShardedCache(newFakeCache[string, int], 10)
+	sc := NewSharded(newFakeCache[string, int], 10)
 	t.Run("Add and Get existing key", func(t *testing.T) {
 		sc.Add("hello", 123, time.Second)
 
@@ -93,25 +93,25 @@ func TestShardedCache_KeyTypes(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			switch key := testCase.key.(type) {
 			case string:
-				sc := NewShardedCache(newFakeCache[string, string], 8)
+				sc := NewSharded(newFakeCache[string, string], 8)
 				sc.Add(key, testCase.value.(string), time.Second)
 				got, found := sc.Get(key)
 				assert.True(t, found)
 				assert.Equal(t, testCase.value, got)
 			case int:
-				sc := NewShardedCache(newFakeCache[int, int], 8)
+				sc := NewSharded(newFakeCache[int, int], 8)
 				sc.Add(key, testCase.value.(int), time.Second)
 				got, found := sc.Get(key)
 				assert.True(t, found)
 				assert.Equal(t, testCase.value, got)
 			case bool:
-				sc := NewShardedCache(newFakeCache[bool, bool], 8)
+				sc := NewSharded(newFakeCache[bool, bool], 8)
 				sc.Add(key, testCase.value.(bool), time.Second)
 				got, found := sc.Get(key)
 				assert.True(t, found)
 				assert.Equal(t, testCase.value, got)
 			case testValue:
-				sc := NewShardedCache(newFakeCache[testValue, testValue], 8)
+				sc := NewSharded(newFakeCache[testValue, testValue], 8)
 				sc.Add(key, testCase.value.(testValue), time.Second)
 				got, found := sc.Get(key)
 				assert.True(t, found)
@@ -122,7 +122,7 @@ func TestShardedCache_KeyTypes(t *testing.T) {
 }
 
 func TestShardedCache_Keys(t *testing.T) {
-	sc := NewShardedCache(newFakeCache[string, int], 4 /*shardCount*/)
+	sc := NewSharded(newFakeCache[string, int], 4 /*shardCount*/)
 	expectedKeys := []string{"a", "b", "c", "d", "e", "f", "g"}
 	for i, key := range expectedKeys {
 		sc.Add(key, i, time.Second)
@@ -132,7 +132,7 @@ func TestShardedCache_Keys(t *testing.T) {
 }
 
 func TestShardedCache_Purge(t *testing.T) {
-	sc := NewShardedCache(newFakeCache[int, string], 5)
+	sc := NewSharded(newFakeCache[int, string], 5)
 	keysToAdd := []int{1, 10, 100, 1000}
 	for _, key := range keysToAdd {
 		sc.Add(key, "some value", time.Second)
@@ -149,7 +149,7 @@ func TestShardedCache_Purge(t *testing.T) {
 // TestShardedCache_ShardingDistribution verifies that keys are distributed across multiple shards.
 func TestShardedCache_ShardingDistribution(t *testing.T) {
 	shardCount := 10
-	sc := NewShardedCache(newFakeCache[string, int], shardCount)
+	sc := NewSharded(newFakeCache[string, int], shardCount)
 	// keyCount should be large enough compared to shardCount so it becomes virtually impossible to have a shard with
 	// less than 50% of `keyCount/shardCount` keys.
 	keyCount := 100_000
@@ -164,7 +164,7 @@ func TestShardedCache_ShardingDistribution(t *testing.T) {
 
 // TestShardedCache_ShardMapping tests the hash function mapping to each shard.
 func TestShardedCache_ShardMapping(t *testing.T) {
-	sc := NewShardedCache(newFakeCache[string, int], 10 /*shardCount*/)
+	sc := NewSharded(newFakeCache[string, int], 10 /*shardCount*/)
 	for i := range 10 {
 		sc.Add(fmt.Sprintf("key-%d", i), i, time.Second)
 	}

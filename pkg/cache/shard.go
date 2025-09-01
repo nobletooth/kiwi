@@ -14,24 +14,24 @@ import (
 	"github.com/nobletooth/kiwi/pkg/utils"
 )
 
-// ShardedCache is a cache implementation that distributes keys across multiple underlying cache instances (shards).
+// Sharded is a cache implementation that distributes keys across multiple underlying cache instances (shards).
 // This pattern is used to reduce lock contention and improve concurrency in high-traffic scenarios, as different keys
 // can be accessed in parallel on different shards.
-type ShardedCache[K comparable, V any] struct {
-	shards []Cache[K, V]
+type Sharded[K comparable, V any] struct {
+	shards []Layer[K, V]
 	hash   func(key K) uint64 // Helps choose the shards index.
 }
 
-// NewShardedCache is the constructor for ShardedCache. It takes a cacheGenerator function, which is responsible for
+// NewSharded is the constructor for Sharded. It takes a cacheGenerator function, which is responsible for
 // creating individual shard instances, and the desired number of shards (shardCount).
-func NewShardedCache[K comparable, V any](cacheGenerator func() Cache[K, V], shardCount int) *ShardedCache[K, V] {
+func NewSharded[K comparable, V any](cacheGenerator func() Layer[K, V], shardCount int) *Sharded[K, V] {
 	// Ensure there is at least one shard.
 	if shardCount <= 0 {
 		utils.RaiseInvariant("shard", "negative_shard_count",
 			"Invalid capacity has been given to sharded cache.", "shardCount", shardCount)
 		shardCount = 1
 	}
-	shardedCache := &ShardedCache[K, V]{shards: make([]Cache[K, V], shardCount)}
+	shardedCache := &Sharded[K, V]{shards: make([]Layer[K, V], shardCount)}
 	// Initialize shard instances.
 	for i := range shardCount {
 		shardedCache.shards[i] = cacheGenerator()
@@ -103,23 +103,23 @@ func NewShardedCache[K comparable, V any](cacheGenerator func() Cache[K, V], sha
 
 // getShard determines which shard a given key belongs to. It does this by hashing the key and using the modulo operator
 // to map the hash value to a shard index.
-func (c *ShardedCache[K, V]) getShard(key K) Cache[K, V] {
+func (c *Sharded[K, V]) getShard(key K) Layer[K, V] {
 	return c.shards[c.hash(key)%uint64(len(c.shards))]
 }
 
 // Get finds the appropriate shard for the key and retrieves the value from it.
-func (c *ShardedCache[K, V]) Get(key K) (V, bool /*found*/) {
+func (c *Sharded[K, V]) Get(key K) (V, bool /*found*/) {
 	return c.getShard(key).Get(key)
 }
 
 // Add finds the appropriate shard for the key and adds the key-value pair to it.
-func (c *ShardedCache[K, V]) Add(key K, value V, ttl time.Duration) /*evictionOccurred*/ bool {
+func (c *Sharded[K, V]) Add(key K, value V, ttl time.Duration) /*evictionOccurred*/ bool {
 	return c.getShard(key).Add(key, value, ttl)
 }
 
 // Keys aggregates the keys from all shards into a single slice. This can be a resource-intensive operation, as it
 // requires iterating over every shard and collecting its keys.
-func (c *ShardedCache[K, V]) Keys() []K {
+func (c *Sharded[K, V]) Keys() []K {
 	keys := make([]K, 0)
 	for _, shard := range c.shards {
 		keys = append(keys, shard.Keys()...)
@@ -128,7 +128,7 @@ func (c *ShardedCache[K, V]) Keys() []K {
 }
 
 // Purge clears all items from the cache by calling Purge on every shard.
-func (c *ShardedCache[K, V]) Purge() {
+func (c *Sharded[K, V]) Purge() {
 	for _, shard := range c.shards {
 		shard.Purge()
 	}

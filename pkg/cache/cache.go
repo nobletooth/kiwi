@@ -6,9 +6,9 @@ package cache
 
 import "time"
 
-// Cache defines the interface for a generic key-value cache. This allows different cache implementations
-// (e.g., LRU, LFU, simple map-based) to be used as shards within the ShardedCache.
-type Cache[K comparable, V any] interface {
+// Layer defines the interface for a generic key-value cache. This allows different cache implementations
+// (e.g., LRU, LFU, simple map-based) to be used as shards within the Sharded.
+type Layer[K comparable, V any] interface {
 	// Get returns value from cache for given key and a boolean indicating whether key was found.
 	Get(key K) (V, bool)
 	// Add inserts a key-value pair into the cache with the given TTL. It returns true if an item was evicted.
