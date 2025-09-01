@@ -9,6 +9,21 @@ import (
 	kiwipb "github.com/nobletooth/kiwi/proto"
 )
 
+// lcpLen returns the length of the longest common prefix of keys k1 and k2.
+func lcpLen(k1, k2 []byte) int {
+	biggerSize := len(k1)
+	if len(k2) < biggerSize {
+		biggerSize = len(k2)
+	}
+
+	longestCommon := 0
+	for longestCommon < biggerSize && k1[longestCommon] == k2[longestCommon] {
+		longestCommon++
+	}
+
+	return longestCommon
+}
+
 type Pair struct{ Key, Value []byte }
 
 // compressDataBlocks splits a sorted list of keys into optimal prefixed blocks.
@@ -92,19 +107,4 @@ func compressDataBlocks(pairs []Pair) ([] /*prefix*/ []byte, []*kiwipb.DataBlock
 	}
 
 	return prefixes, blocks
-}
-
-// lcpLen returns the length of the longest common prefix of keys k1 and k2.
-func lcpLen(k1, k2 []byte) int {
-	biggerSize := len(k1)
-	if len(k2) < biggerSize {
-		biggerSize = len(k2)
-	}
-
-	longestCommon := 0
-	for longestCommon < biggerSize && k1[longestCommon] == k2[longestCommon] {
-		longestCommon++
-	}
-
-	return longestCommon
 }
