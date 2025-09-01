@@ -42,10 +42,11 @@ type PartHeader struct {
 	unknownFields protoimpl.UnknownFields
 
 	// NOTE: Since keeping the reference to the next part needs disk updates, we don't do that.
-	Id        int64                        `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`                               // Part's ID; sorted by time; File's name is <id>.part
-	PrevPart  int64                        `protobuf:"varint,2,opt,name=prev_part,json=prevPart,proto3" json:"prev_part,omitempty"`   // ID of the previous part; zero if this is the first part.
-	SkipIndex *PartHeader_SkipIndex        `protobuf:"bytes,3,opt,name=skip_index,json=skipIndex,proto3" json:"skip_index,omitempty"` // In-memory skip index for the entire part.
-	BfIndex   *PartHeader_BloomFilterIndex `protobuf:"bytes,4,opt,name=bf_index,json=bfIndex,proto3" json:"bf_index,omitempty"`       // In-memory Bloom filter for the entire part (optional).
+	Id        int64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`                               // Part's ID; sorted by time; File's name is <id>.part
+	PrevPart  int64                 `protobuf:"varint,2,opt,name=prev_part,json=prevPart,proto3" json:"prev_part,omitempty"`   // ID of the previous part; zero if this is the first part.
+	SkipIndex *PartHeader_SkipIndex `protobuf:"bytes,3,opt,name=skip_index,json=skipIndex,proto3" json:"skip_index,omitempty"` // In-memory skip index for the entire part.
+	// NOTE: Bloom filter index is not stored as a gob, but we use protobuf instead for better on-disk size.
+	BfIndex *PartHeader_BloomFilterIndex `protobuf:"bytes,4,opt,name=bf_index,json=bfIndex,proto3" json:"bf_index,omitempty"` // In-memory Bloom filter for the entire part (optional).
 }
 
 func (x *PartHeader) Reset() {
@@ -240,9 +241,9 @@ type PartHeader_BloomFilterIndex struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	NumBits      int64  `protobuf:"varint,1,opt,name=num_bits,json=numBits,proto3" json:"num_bits,omitempty"`                  // Number of bits in the Bloom filter.
-	NumHashFuncs int32  `protobuf:"varint,2,opt,name=num_hash_funcs,json=numHashFuncs,proto3" json:"num_hash_funcs,omitempty"` // Number of hash functions used.
-	BitArray     []byte `protobuf:"bytes,3,opt,name=bit_array,json=bitArray,proto3" json:"bit_array,omitempty"`                // Bit array representing the Bloom filter.
+	NumBits      uint64   `protobuf:"varint,1,opt,name=num_bits,json=numBits,proto3" json:"num_bits,omitempty"`                  // Number of bits in the Bloom filter.
+	NumHashFuncs uint64   `protobuf:"varint,2,opt,name=num_hash_funcs,json=numHashFuncs,proto3" json:"num_hash_funcs,omitempty"` // Number of hash functions used.
+	BitArray     []uint64 `protobuf:"varint,3,rep,packed,name=bit_array,json=bitArray,proto3" json:"bit_array,omitempty"`        // Bit array representing the Bloom filter.
 }
 
 func (x *PartHeader_BloomFilterIndex) Reset() {
@@ -277,21 +278,21 @@ func (*PartHeader_BloomFilterIndex) Descriptor() ([]byte, []int) {
 	return file_layout_proto_rawDescGZIP(), []int{0, 1}
 }
 
-func (x *PartHeader_BloomFilterIndex) GetNumBits() int64 {
+func (x *PartHeader_BloomFilterIndex) GetNumBits() uint64 {
 	if x != nil {
 		return x.NumBits
 	}
 	return 0
 }
 
-func (x *PartHeader_BloomFilterIndex) GetNumHashFuncs() int32 {
+func (x *PartHeader_BloomFilterIndex) GetNumHashFuncs() uint64 {
 	if x != nil {
 		return x.NumHashFuncs
 	}
 	return 0
 }
 
-func (x *PartHeader_BloomFilterIndex) GetBitArray() []byte {
+func (x *PartHeader_BloomFilterIndex) GetBitArray() []uint64 {
 	if x != nil {
 		return x.BitArray
 	}
@@ -324,11 +325,11 @@ var file_layout_proto_rawDesc = []byte{
 	0x20, 0x03, 0x28, 0x03, 0x52, 0x0c, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x4f, 0x66, 0x66, 0x73, 0x65,
 	0x74, 0x73, 0x1a, 0x70, 0x0a, 0x10, 0x42, 0x6c, 0x6f, 0x6f, 0x6d, 0x46, 0x69, 0x6c, 0x74, 0x65,
 	0x72, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x12, 0x19, 0x0a, 0x08, 0x6e, 0x75, 0x6d, 0x5f, 0x62, 0x69,
-	0x74, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x03, 0x52, 0x07, 0x6e, 0x75, 0x6d, 0x42, 0x69, 0x74,
+	0x74, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x07, 0x6e, 0x75, 0x6d, 0x42, 0x69, 0x74,
 	0x73, 0x12, 0x24, 0x0a, 0x0e, 0x6e, 0x75, 0x6d, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x5f, 0x66, 0x75,
-	0x6e, 0x63, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x05, 0x52, 0x0c, 0x6e, 0x75, 0x6d, 0x48, 0x61,
+	0x6e, 0x63, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0c, 0x6e, 0x75, 0x6d, 0x48, 0x61,
 	0x73, 0x68, 0x46, 0x75, 0x6e, 0x63, 0x73, 0x12, 0x1b, 0x0a, 0x09, 0x62, 0x69, 0x74, 0x5f, 0x61,
-	0x72, 0x72, 0x61, 0x79, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x08, 0x62, 0x69, 0x74, 0x41,
+	0x72, 0x72, 0x61, 0x79, 0x18, 0x03, 0x20, 0x03, 0x28, 0x04, 0x52, 0x08, 0x62, 0x69, 0x74, 0x41,
 	0x72, 0x72, 0x61, 0x79, 0x22, 0x37, 0x0a, 0x09, 0x44, 0x61, 0x74, 0x61, 0x42, 0x6c, 0x6f, 0x63,
 	0x6b, 0x12, 0x12, 0x0a, 0x04, 0x6b, 0x65, 0x79, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0c, 0x52,
 	0x04, 0x6b, 0x65, 0x79, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x73, 0x18,
