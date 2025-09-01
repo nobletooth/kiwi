@@ -42,10 +42,12 @@ func writeSSTable(prevId int64, pairs []Pair, path string) error {
 
 	// Build header.
 	dataBlockOffsets := make([]int64, len(dataBlocks))
-	currOffset := int64(0)
+	currBlockOffset := int64(0)
+	firstKeys := make([][]byte, len(dataBlocks))
 	for i, block := range dataBlocks {
-		dataBlockOffsets[i] = currOffset
-		currOffset += getBlockSize(block)
+		dataBlockOffsets[i] = currBlockOffset
+		currBlockOffset += getBlockSize(block)
+		firstKeys[i] = slices.Concat(prefixes[i], block.GetKeys()[0])
 	}
 	lastDBlockIndex := len(dataBlocks) - 1
 	lastKeyIndex := len(dataBlocks[lastDBlockIndex].GetKeys()) - 1
@@ -54,7 +56,7 @@ func writeSSTable(prevId int64, pairs []Pair, path string) error {
 		PrevPart: prevId,
 		SkipIndex: &kiwipb.PartHeader_SkipIndex{
 			Prefixes:     prefixes,
-			FirstKey:     slices.Concat(prefixes[0], dataBlocks[0].GetKeys()[0]),
+			FirstKeys:    firstKeys,
 			LastKey:      slices.Concat(prefixes[lastDBlockIndex], dataBlocks[lastDBlockIndex].GetKeys()[lastKeyIndex]),
 			BlockOffsets: dataBlockOffsets,
 		},
@@ -63,7 +65,7 @@ func writeSSTable(prevId int64, pairs []Pair, path string) error {
 	// Write blocks into a temporary file first.
 	tmpFile, err := os.CreateTemp(*tmpFolder, "sstable_*.tmp")
 	if err != nil || tmpFile == nil {
-		return fmt.Errorf("failed to create temp file '%s' for sstable: %w", tmpFile.Name(), err)
+		return fmt.Errorf("failed to create temp file for sstable: %w", err)
 	}
 	defer func() { _ = os.Remove(tmpFile.Name()) }()
 	blockWriter, err := NewBlockWriter(tmpFile)
@@ -83,6 +85,9 @@ func writeSSTable(prevId int64, pairs []Pair, path string) error {
 	}
 
 	// Rename the temporary file to the final path.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755 /*perm*/); err != nil {
+		return fmt.Errorf("failed to create dirs for sstable path '%s': %w", path, err)
+	}
 	if err := os.Rename(tmpFile.Name(), path); err != nil {
 		return fmt.Errorf("failed to rename temp file '%s' to final path '%s': %w", tmpFile.Name(), path, err)
 	}
@@ -143,44 +148,46 @@ func NewSSTable(filePath string) (*SSTable, error) {
 // getFromDataBlocks scans through the cached and on-disk data blocks to find the value for the given key.
 func (s *SSTable) getFromDataBlocks(key []byte) ([]byte, error) {
 	// Since the skip index is sorted by key prefixes, we can use binary search to find the right data block.
-	// We do a prefix search to find the first block whose prefix is greater than the key. Since prefixes may
-	// have collisions, we need to scan backwards to get the complete matching range.
-	// For instance, when searching for "abc", we may end up on the "ab" prefix in the index, so we need to go back
-	// to find the "a" or the "" (empty) prefix as well. We may even see multiple "ab" prefixes.
-	blockPrefixes := s.header.GetSkipIndex().GetPrefixes()
-	endIndex, _ := slices.BinarySearchFunc(blockPrefixes, key, bytes.Compare)
-	startIndex := endIndex
-	for startIndex > 0 && bytes.HasPrefix(blockPrefixes[startIndex-1], key) {
-		startIndex--
+	// blockIndex is the first block whose first key is less than the target key. We don't care if we find an
+	// exact match, but the found block needs to be fully scanned.
+	firstKeys := s.header.GetSkipIndex().GetFirstKeys()
+	blockIndex, found := slices.BinarySearchFunc(firstKeys, key, bytes.Compare)
+	if !found { // When not found, BinarySearchFunc returns the index where the key would be inserted.
+		if blockIndex == 0 {
+			// Key is smaller than the first key in the skip index, so it cannot be in this SSTable.
+			return nil, ErrKeyNotFound
+		} else {
+			// This is not the first block, so we need to check the previous block.
+			// E.g. if the first keys are [a, d, g] and we're looking for 'e', we need to check the block
+			// starting with 'd'.
+			blockIndex--
+		}
 	}
 
 	// Now that we have the proper block range, we need to scan each block for the key.
 	sstableId := s.header.GetId() // Cache to avoid expensive heap calls.
 	blockOffsets := s.header.GetSkipIndex().GetBlockOffsets()
-	for i := startIndex; i < endIndex; i++ {
-		// Read the data block.
-		blockOffset := blockOffsets[i] + s.dataBlockOffset
-		var dataBlock *kiwipb.DataBlock
-		if cachedBlock, exists := s.sharedCache.Get(s.table, sstableId, blockOffset); exists {
-			// Read from in-memory data block cache.
-			dataBlock = cachedBlock
-		} else {
-			// Read from disk part and populate the cache.
-			dataBlock = &kiwipb.DataBlock{}
-			if _, err := s.blockReader.ReadBlock(blockOffset, dataBlock); err != nil {
-				return nil, fmt.Errorf("failed to read data block at offset %d: %w", blockOffset, err)
-			}
-			s.sharedCache.Set(s.table, sstableId, blockOffset, dataBlock)
+	blockPrefixes := s.header.GetSkipIndex().GetPrefixes()
+	// Read the data block.
+	blockOffset := blockOffsets[blockIndex] + s.dataBlockOffset
+	var dataBlock *kiwipb.DataBlock
+	if cachedBlock, exists := s.sharedCache.Get(s.table, sstableId, blockOffset); exists {
+		// Read from in-memory data block cache.
+		dataBlock = cachedBlock
+	} else {
+		// Read from disk part and populate the cache.
+		dataBlock = &kiwipb.DataBlock{}
+		if _, err := s.blockReader.ReadBlock(blockOffset, dataBlock); err != nil {
+			return nil, fmt.Errorf("failed to read data block at offset %d: %w", blockOffset, err)
 		}
+		s.sharedCache.Set(s.table, sstableId, blockOffset, dataBlock)
+	}
 
-		// Now that we have the data block, we can scan it for the key. Note that the keys in the data block
-		// are stripped of their mutual prefix aforementioned in the skip index.
-		keyWithoutPrefix := bytes.TrimPrefix(key, blockPrefixes[i])
-		if keyIndex, found := slices.BinarySearchFunc(dataBlock.GetKeys(), keyWithoutPrefix, bytes.Compare); found {
-			return dataBlock.GetValues()[keyIndex], nil
-		} else { // Key not found in this block, continue to next block.
-			continue
-		}
+	// Now that we have the data block, we can scan it for the key. Note that the keys in the data block
+	// are stripped of their mutual prefix aforementioned in the skip index.
+	keyWithoutPrefix := bytes.TrimPrefix(key, blockPrefixes[blockIndex])
+	if keyIndex, found := slices.BinarySearchFunc(dataBlock.GetKeys(), keyWithoutPrefix, bytes.Compare); found {
+		return dataBlock.GetValues()[keyIndex], nil
 	}
 
 	return nil, ErrKeyNotFound
@@ -215,11 +222,15 @@ func (s *SSTable) Get(key []byte) ([]byte, error) {
 	}
 	// First, check if the key is within the min/max range of the SSTable.
 	skipIndex := s.header.GetSkipIndex()
-	if bytes.Compare(key, skipIndex.GetFirstKey()) < 0 || bytes.Compare(key, skipIndex.GetLastKey()) > 0 {
+	if bytes.Compare(key, skipIndex.GetFirstKeys()[0]) < 0 || bytes.Compare(key, skipIndex.GetLastKey()) > 0 {
 		return nil, ErrKeyNotFound
 	}
 	// The key is within the range, so we need to scan the data blocks.
 	return s.getFromDataBlocks(key)
+}
+
+func (s *SSTable) Table() int64 {
+	return s.table
 }
 
 func (s *SSTable) Close() error {
