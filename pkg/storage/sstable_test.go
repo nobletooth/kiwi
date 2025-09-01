@@ -51,4 +51,15 @@ func TestSSTable(t *testing.T) {
 			assert.Nil(t, gotValue, "Expected nil for non-existent key: %s", key)
 		}
 	})
+	t.Run("bf_index_filled", func(t *testing.T) {
+		for _, pair := range data {
+			assert.True(t, sst.bloomFilter.Test(pair.Key), "Bloom filter should contain key: %s", pair.Key)
+		}
+	})
+	t.Run("skip_index_filled", func(t *testing.T) {
+		assert.Equal(t, "apple", string(sst.header.GetSkipIndex().GetFirstKeys()[0]),
+			"First skip index key should be 'apple'")
+		assert.Equal(t, "zed", string(sst.header.GetSkipIndex().GetLastKey()),
+			"Last skip index key should be 'zed'")
+	})
 }
