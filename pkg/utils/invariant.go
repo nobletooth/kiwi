@@ -37,7 +37,7 @@ var invariantsMetric = promauto.NewCounterVec(prometheus.CounterOpts{
 func RaiseInvariant(module, invariantType, msg string, args ...any) {
 	invariantsMetric.WithLabelValues(invariantType).Inc()
 	slog.With("invariant", invariantType, "module", module).Error(msg, args...)
-	if Test {
+	if IsTestMode {
 		panic("invariant violated: " + invariantType)
 	}
 }

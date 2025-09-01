@@ -5,18 +5,23 @@
 package utils
 
 import (
+	"log/slog"
+	"strconv"
 	"time"
 )
 
 var (
-	Test      bool // Should be true when running tests.
-	Version   string
-	Commit    string
-	BuildTime string
-	StartTime time.Time
+	TestMode   string // Should be true when running tests.
+	IsTestMode bool
+	Version    string
+	Commit     string
+	BuildTime  string
+	StartTime  time.Time
 )
 
 func init() {
+	StartTime = time.Now()
+
 	// If build info is not set, make that clear.
 	if Version == "" {
 		Version = "unknown"
@@ -27,5 +32,11 @@ func init() {
 	if BuildTime == "" {
 		BuildTime = "unknown"
 	}
-	StartTime = time.Now()
+	if len(TestMode) > 0 {
+		if isTestMode, err := strconv.ParseBool(TestMode); err == nil {
+			IsTestMode = isTestMode
+		} else {
+			slog.Warn("Failed to parse TestMode build flag, defaulting to false", "error", err)
+		}
+	}
 }
