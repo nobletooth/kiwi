@@ -218,7 +218,7 @@ func (br *BlockReader) ReadBlock(offset int64, msg proto.Message) (int64 /*nextO
 
 	// Read the block size (8 bytes, little-endian).
 	sizeBuf := make([]byte, 8)
-	if _, err := br.reader.ReadAt(sizeBuf, int64(offset)); err != nil {
+	if _, err := br.reader.ReadAt(sizeBuf, offset); err != nil {
 		return 0, fmt.Errorf("failed to read block size: %w", err)
 	}
 
