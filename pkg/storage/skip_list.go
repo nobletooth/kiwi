@@ -93,15 +93,15 @@ func (s *SkipList[K, V]) Set(key K, value V) error {
 	}
 	// Track the last nodes before the position at each level.
 	update := make([]*skipListNode[K, V], s.maxLevel)
-	n := s.head
+	node := s.head
 	for lvl := s.level - 1; lvl >= 0; lvl-- {
-		for next := n.forwards[lvl]; next != nil && cmp.Compare(next.key, key) < 0; next = n.forwards[lvl] {
-			n = next
+		for next := node.forwards[lvl]; next != nil && cmp.Compare(next.key, key) < 0; next = node.forwards[lvl] {
+			node = next
 		}
-		update[lvl] = n
+		update[lvl] = node
 	}
 	// Check if the key already exists at level 0.
-	if next := n.forwards[0]; next != nil && cmp.Compare(next.key, key) == 0 {
+	if next := node.forwards[0]; next != nil && cmp.Compare(next.key, key) == 0 {
 		next.value = value
 		return nil
 	}
@@ -152,8 +152,7 @@ func (s *SkipList[K, V]) Delete(key K) error {
 	return nil
 }
 
-// Close releases resources if any.
+// Close releases no resources to free for now.
 func (s *SkipList[K, V]) Close() error {
-	// No resources to free for now.
 	return nil
 }
