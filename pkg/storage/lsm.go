@@ -128,18 +128,39 @@ func NewLSMTree(dataDir string, table int64) (*LSMTree, error) {
 	return lsm, nil
 }
 
-func (l *LSMTree) Get(key []byte) (Opts, []byte, error) {
-	//TODO implement me
-	panic("implement me")
+func (l *LSMTree) Get(key []byte) ([]byte, error) {
+	if len(key) == 0 {
+		return nil, fmt.Errorf("expected a non-empty key")
+	}
+
+	l.mux.RLock()
+	defer l.mux.RUnlock()
+	// First check the memtable.
+	if val, exists := l.memTable.Get(key); exists {
+		return val, nil
+	}
+	// Then check the disk tables, starting from the latest one.
+	for partId := l.latestDiskTable.header.GetId(); partId > 0; {
+		sst, exists := l.diskTables[partId]
+		if !exists || sst == nil {
+			utils.RaiseInvariant("lsm", "missing_part", "Missing part in LSM tree.", "table", l.table, "part", partId)
+			return nil, fmt.Errorf("missing part %d in lsm tree for table %d", partId, l.table)
+		}
+		val, err := sst.Get(key)
+		if errors.Is(err, ErrKeyNotFound) {
+			partId = sst.header.GetPrevPart()
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to get key from sstable %d: %v", partId, err)
+		}
+		return val, nil
+	}
+	return nil, ErrKeyNotFound
 }
 
-// Set sets the given key-value pair in the LSM tree. The `opt` parameter can be used to set options
-// like tombstone or expirable. If the tombstone option is set, an error would be returned, as setting a key
-// with tombstone is not allowed. You should use Delete instead.
-func (l *LSMTree) Set(opt Opts, key, value []byte) error {
-	if opt.Toggled(TombStone) {
-		return fmt.Errorf("cannot set a key with tombstone option; use delete instead")
-	}
+// Set sets the given key-value pair in the LSM tree.
+func (l *LSMTree) Set(key, value []byte) error {
 	if len(key) == 0 {
 		return fmt.Errorf("expected a non-empty key")
 	}
@@ -147,7 +168,7 @@ func (l *LSMTree) Set(opt Opts, key, value []byte) error {
 	l.mux.Lock()
 	defer l.mux.Unlock()
 
-	shouldFlush := l.memTable.Set(key, slices.Concat([]byte{byte(opt)}, value))
+	shouldFlush := l.memTable.Set(key, value)
 	if !shouldFlush {
 		return nil
 	}
@@ -173,11 +194,6 @@ func (l *LSMTree) Set(opt Opts, key, value []byte) error {
 	l.latestDiskTable = sst
 	l.memTable = NewMemTable() // Reset memtable.
 	return nil
-}
-
-func (l *LSMTree) Delete(key []byte) error {
-	//TODO implement me
-	panic("implement me")
 }
 
 // Close closes every SSTable in the LSM tree.
