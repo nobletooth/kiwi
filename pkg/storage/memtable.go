@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"iter"
 )
 
 var (
@@ -59,4 +60,14 @@ func (m *MemTable) Delete(key []byte) error {
 		m.heldBytes -= len(key) + len(prevVal)
 	}
 	return err
+}
+
+// Pairs returns an iterator over all key-value pairs in the memtable.
+func (m *MemTable) Pairs() iter.Seq[BytePair] {
+	it := m.skipList.Iterate()
+	return func(yield func(BytePair) bool) {
+		it(func(pair Pair[ /*key*/ []byte /*value*/, []byte]) bool {
+			return yield(BytePair(pair))
+		})
+	}
 }

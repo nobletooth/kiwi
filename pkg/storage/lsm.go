@@ -9,17 +9,38 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/nobletooth/kiwi/pkg/utils"
 )
 
+// Opts represents options for storing a key-value pair.
+type Opts uint8
+
+// Toggled returns true if any of the given options are toggled in the current options.
+func (o Opts) Toggled(opts Opts) bool {
+	return o&opts != 0
+}
+
+const (
+	// TombStone is when a key is deleted. We put a tombstone marker instead of actually deleting the key.
+	// This is because in LSM tree, we cannot delete a key from disk immediately, as it may exist in multiple SSTables.
+	// Instead, we mark the key as deleted with a tombstone, and during compaction, the key would be removed.
+	TombStone Opts = 1 << iota
+	// Expirable is when a key has an expiration time set; Expired keys would be removed during compaction.
+	Expirable
+)
+
 // LSMTree represents a log-structured merge tree (LSM tree) for a specific Kiwi table (Redis db).
 type LSMTree struct {
 	table           int64        // The Kiwi table ID (Redis db number).
+	dir             string       // Path where tables files are stored; ends with table.
 	mux             sync.RWMutex // Protects against race conditions.
 	memTable        *MemTable    // Lookups are started from the memtable, and then disk tables.
 	latestDiskTable *SSTable     // Disk lookups are started from the latest disk table.
@@ -93,11 +114,90 @@ func NewLSMTree(dataDir string, table int64) (*LSMTree, error) {
 		return nil, fmt.Errorf("no tail found in lsm tree directory %s", dir)
 	}
 
-	return &LSMTree{
+	lsm := &LSMTree{
 		table:           table,
 		mux:             sync.RWMutex{},
 		memTable:        NewMemTable(),
 		latestDiskTable: latestDiskTable,
 		diskTables:      diskTables,
-	}, nil
+		dir:             dir,
+	}
+	// Close SSTable file descriptors when the LSM tree is garbage collected.
+	runtime.SetFinalizer(lsm, func(lsm *LSMTree) { _ = lsm.Close() })
+
+	return lsm, nil
+}
+
+func (l *LSMTree) Get(key []byte) (Opts, []byte, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+// Set sets the given key-value pair in the LSM tree. The `opt` parameter can be used to set options
+// like tombstone or expirable. If the tombstone option is set, an error would be returned, as setting a key
+// with tombstone is not allowed. You should use Delete instead.
+func (l *LSMTree) Set(opt Opts, key, value []byte) error {
+	if opt.Toggled(TombStone) {
+		return fmt.Errorf("cannot set a key with tombstone option; use delete instead")
+	}
+	if len(key) == 0 {
+		return fmt.Errorf("expected a non-empty key")
+	}
+
+	l.mux.Lock()
+	defer l.mux.Unlock()
+
+	shouldFlush := l.memTable.Set(key, slices.Concat([]byte{byte(opt)}, value))
+	if !shouldFlush {
+		return nil
+	}
+
+	// Memtable is full, flush it to disk.
+	prevPartId := l.latestDiskTable.header.GetId()
+	nextPartId := prevPartId + 1
+	tablePath := filepath.Join(l.dir, fmt.Sprintf("%d.sst", nextPartId))
+	if err := writeSSTable(prevPartId, nextPartId, slices.Collect(l.memTable.Pairs()), tablePath); err != nil {
+		return fmt.Errorf("failed to flush memtable to disk: %v", err)
+	}
+
+	sst, err := NewSSTable(tablePath)
+	if err != nil {
+		return fmt.Errorf("failed to load newly created sstable %s: %v", tablePath, err)
+	}
+	if sst.header.GetId() != nextPartId || sst.header.GetPrevPart() != prevPartId {
+		utils.RaiseInvariant("lsm", "invalid_part_ids", "Created sstable has invalid part ids.", "table", tablePath)
+		return fmt.Errorf("newly created sstable %s has invalid part ids: got (%d<-%d), want (%d<-%d)",
+			tablePath, sst.header.GetPrevPart(), sst.header.GetId(), prevPartId, nextPartId)
+	}
+	l.diskTables[nextPartId] = sst
+	l.latestDiskTable = sst
+	l.memTable = NewMemTable() // Reset memtable.
+	return nil
+}
+
+func (l *LSMTree) Delete(key []byte) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+// Close closes every SSTable in the LSM tree.
+func (l *LSMTree) Close() error {
+	if l == nil {
+		return nil
+	}
+
+	l.mux.Lock()
+	defer l.mux.Unlock()
+
+	var errs error
+	for _, sst := range l.diskTables {
+		if sst == nil {
+			continue
+		}
+		if err := sst.Close(); err != nil {
+			errs = errors.Join(errs, err)
+		}
+	}
+
+	return errs
 }

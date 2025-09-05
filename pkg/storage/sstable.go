@@ -47,7 +47,7 @@ func getBloomFalsePositiveRate() float64 {
 }
 
 // writeSSTable writes the given key-value pairs to an SSTable file at the specified path.
-func writeSSTable(prevId int64, pairs []BytePair, path string) error {
+func writeSSTable(prevId, nextId int64, pairs []BytePair, path string) error {
 	if len(pairs) == 0 {
 		return errors.New("expected a non-empty list of pairs")
 	}
@@ -88,7 +88,7 @@ func writeSSTable(prevId int64, pairs []BytePair, path string) error {
 			"numBits", bf.NumBits, "numHashFuncs", bf.NumHashFuncs)
 	}
 	header := &kiwipb.PartHeader{
-		Id:       prevId + 1,
+		Id:       nextId,
 		PrevPart: prevId,
 		BfIndex:  bf,
 		SkipIndex: &kiwipb.PartHeader_SkipIndex{

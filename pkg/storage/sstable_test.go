@@ -29,8 +29,7 @@ func TestSSTable(t *testing.T) {
 	}
 	// Ensure data is sorted by key before writing to SSTable.
 	slices.SortFunc(data, func(a, b BytePair) int { return bytes.Compare(a.Key, b.Key) })
-	err := writeSSTable( /*prevId*/ 0, data, resultFile)
-	require.NoError(t, err)
+	require.NoError(t, writeSSTable(0 /*prevId*/, 1 /*nextId*/, data, resultFile))
 
 	sst, err := NewSSTable(resultFile)
 	require.NoError(t, err)
