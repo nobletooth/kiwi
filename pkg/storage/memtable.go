@@ -53,7 +53,7 @@ func (m *MemTable) Get(key []byte) ( /*value*/ []byte, error) {
 }
 
 // Set inserts or updates the value for a given key.
-func (m *MemTable) Set(key, value []byte) error {
+func (m *MemTable) Set(key, value []byte) /*shouldFlush*/ bool {
 	m.mux.Lock()
 	defer m.mux.Unlock()
 
@@ -67,7 +67,7 @@ func (m *MemTable) Set(key, value []byte) error {
 		m.heldBytes += len(value) - len(prevVal)
 	}
 
-	return nil
+	return m.entries >= *memtableFlushSize || m.heldBytes >= *memtableFlushSizeBytes
 }
 
 func (m *MemTable) Delete(key []byte) error {
@@ -81,10 +81,4 @@ func (m *MemTable) Delete(key []byte) error {
 	}
 
 	return err
-}
-
-func (m *MemTable) Close() error {
-	m.mux.Lock()
-	defer m.mux.Unlock()
-	return m.skipList.Close()
 }

@@ -180,8 +180,3 @@ func (s *SkipList[K, V]) Iterate() iter.Seq[Pair[K, V]] {
 		}
 	}
 }
-
-// Close releases no resources to free for now.
-func (s *SkipList[K, V]) Close() error {
-	return nil
-}

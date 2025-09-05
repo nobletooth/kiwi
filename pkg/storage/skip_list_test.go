@@ -15,11 +15,6 @@ func TestSkipList_EmptyGet(t *testing.T) {
 	assert.ErrorIs(t, err, ErrKeyNotFound)
 }
 
-func TestSkipList_CloseNoop(t *testing.T) {
-	skipList := NewSkipList[int, string](cmp.Compare)
-	assert.NoError(t, skipList.Close())
-}
-
 // assertHasKey checks the given `skipList` contains the given `key` corresponding to given `expectedVal`.
 func assertHasKey[K any, V any](t *testing.T, skipList *SkipList[K, V], key K, expectedVal any) {
 	t.Helper()
