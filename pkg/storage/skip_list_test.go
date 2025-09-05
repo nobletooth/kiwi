@@ -11,34 +11,33 @@ import (
 
 func TestSkipList_EmptyGet(t *testing.T) {
 	skipList := NewSkipList[int, string](cmp.Compare)
-	_, err := skipList.Get(42)
-	assert.ErrorIs(t, err, ErrKeyNotFound)
+	val, found := skipList.Get(42)
+	assert.False(t, found, "Expected key to be missing.")
+	assert.Zero(t, val, "Expected previous value to be zero value.")
 }
 
 // assertHasKey checks the given `skipList` contains the given `key` corresponding to given `expectedVal`.
 func assertHasKey[K any, V any](t *testing.T, skipList *SkipList[K, V], key K, expectedVal any) {
 	t.Helper()
-	gotValue, err := skipList.Get(key)
-	assert.NoError(t, err)
-	assert.Equal(t, expectedVal, gotValue)
+	val, found := skipList.Get(key)
+	assert.Truef(t, found, "Expected key %s to be present.", fmt.Sprint(key))
+	assert.Equal(t, expectedVal, val)
 }
 
 // setNewKey puts the given `key` and `value` into the `skipList` and asserts that the key was not present before.
 func setNewKey[K any, V any](t *testing.T, skipList *SkipList[K, V], key K, value V) {
 	t.Helper()
-	prevVal, exists, err := skipList.Set(key, value)
+	prevVal, found := skipList.Set(key, value)
 	assert.Zero(t, prevVal, "Expected previous value to be zero value.")
-	assert.Falsef(t, exists, "Expected key %s to be new.", fmt.Sprint(key))
-	assert.NoError(t, err)
+	assert.Falsef(t, found, "Expected key %s to be new.", fmt.Sprint(key))
 }
 
 // updateExistingKey updates the `key` with `value` and asserts that the key was present before.
 func updateExistingKey[K any, V any](t *testing.T, skipList *SkipList[K, V], key K, value, expectedPrev V) {
 	t.Helper()
-	prevVal, exists, err := skipList.Set(key, value)
+	prevVal, found := skipList.Set(key, value)
 	assert.Equal(t, expectedPrev, prevVal)
-	assert.Truef(t, exists, "Expected key %s to be already exist.", fmt.Sprint(key))
-	assert.NoError(t, err)
+	assert.Truef(t, found, "Expected key %s to be already exist.", fmt.Sprint(key))
 }
 
 func TestSkipList_SetAndGet_Simple(t *testing.T) {
@@ -62,9 +61,9 @@ func TestSkipList_UpdateValue(t *testing.T) {
 func TestSkipList_Delete(t *testing.T) {
 	skipList := NewSkipList[int, string](cmp.Compare)
 	// Deleting a missing key returns ErrKeyNotFound.
-	prev, err := skipList.Delete(7)
+	prev, found := skipList.Delete(7)
 	assert.Zero(t, prev, "Expected previous value to be zero value.")
-	assert.ErrorIs(t, err, ErrKeyNotFound)
+	assert.Falsef(t, found, "Expected key %d to be missing.", 7)
 
 	// Insert some and delete one
 	for _, testCase := range []struct {
@@ -74,14 +73,14 @@ func TestSkipList_Delete(t *testing.T) {
 		setNewKey(t, skipList, testCase.k, testCase.v)
 	}
 	{ // Deleting twice should return ErrKeyNotFound.
-		prev, err := skipList.Delete(2)
+		prev, found := skipList.Delete(2)
 		assert.Equal(t, prev, "b")
-		assert.NoError(t, err)
-		_, err = skipList.Get(2)
-		assert.ErrorIs(t, err, ErrKeyNotFound)
-		prev, err = skipList.Delete(2)
+		assert.True(t, found)
+		_, found = skipList.Get(2)
+		assert.False(t, found)
+		prev, found = skipList.Delete(2)
 		assert.Zero(t, prev)
-		assert.ErrorIs(t, err, ErrKeyNotFound)
+		assert.False(t, found)
 	}
 	{ // Other keys remain.
 		assertHasKey(t, skipList, 1, "a")
@@ -104,8 +103,8 @@ func TestSkipList_BulkInsertAndGet(t *testing.T) {
 		setNewKey(t, skipList, i, fmt.Sprintf("val-%d", i))
 	}
 	for i := 0; i < samples; i++ {
-		gotValue, err := skipList.Get(i)
-		assert.NoError(t, err)
+		gotValue, found := skipList.Get(i)
+		assert.True(t, found)
 		assert.Equal(t, fmt.Sprintf("val-%d", i), gotValue)
 	}
 }

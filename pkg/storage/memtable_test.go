@@ -13,13 +13,14 @@ func TestMemTable_Get(t *testing.T) {
 	_ = memTable.Set([]byte("k"), []byte("v"))
 
 	t.Run("existing_key", func(t *testing.T) {
-		val, err := memTable.Get([]byte("k"))
-		assert.NoError(t, err)
+		val, found := memTable.Get([]byte("k"))
+		assert.True(t, found)
 		assert.Equal(t, []byte("v"), val)
 	})
 	t.Run("non_existent_key", func(t *testing.T) {
-		_, err := memTable.Get([]byte("non-existent"))
-		assert.ErrorIs(t, err, ErrKeyNotFound)
+		val, found := memTable.Get([]byte("non-existent"))
+		assert.False(t, found)
+		assert.Zero(t, val)
 	})
 }
 
@@ -73,28 +74,28 @@ func TestMemTable_Delete(t *testing.T) {
 	assert.Equal(t, 4, memTable.heldBytes)
 
 	{ // Get should return the values
-		v, err := memTable.Get([]byte("a"))
-		assert.NoError(t, err)
+		v, found := memTable.Get([]byte("a"))
+		assert.True(t, found)
 		assert.Equal(t, []byte("1"), v)
-		v, err = memTable.Get([]byte("b"))
-		assert.NoError(t, err)
+		v, found = memTable.Get([]byte("b"))
+		assert.True(t, found)
 		assert.Equal(t, []byte("2"), v)
 	}
 	{ // Deleting non-existent key should return error; no side effects on tracked sizes.
-		assert.ErrorIs(t, memTable.Delete([]byte("non_existent")), ErrKeyNotFound)
+		assert.False(t, memTable.Delete([]byte("non_existent")))
 		assert.Equal(t, 2, memTable.entries)
 		assert.Equal(t, 4, memTable.heldBytes)
 	}
 	{ // Delete one and verify it's gone; tracked sizes should shrink.
-		assert.NoError(t, memTable.Delete([]byte("a")))
-		_, err := memTable.Get([]byte("a"))
-		assert.ErrorIs(t, err, ErrKeyNotFound)
+		assert.True(t, memTable.Delete([]byte("a")))
+		_, found := memTable.Get([]byte("a"))
+		assert.False(t, found)
 		assert.Equal(t, 1, memTable.entries)
 		assert.Equal(t, 2, memTable.heldBytes)
 	}
 	{ // Other key remains.
-		v, err := memTable.Get([]byte("b"))
-		assert.NoError(t, err)
+		v, found := memTable.Get([]byte("b"))
+		assert.True(t, found)
 		assert.Equal(t, []byte("2"), v)
 	}
 }

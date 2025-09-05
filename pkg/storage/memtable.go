@@ -2,7 +2,6 @@ package storage
 
 import (
 	"bytes"
-	"errors"
 	"flag"
 	"iter"
 )
@@ -33,8 +32,8 @@ func NewMemTable() *MemTable {
 	return &MemTable{skipList: NewSkipList[[]byte /*key*/, []byte /*value*/](bytes.Compare), entries: 0, heldBytes: 0}
 }
 
-// Get returns the value for a given key, or an error if not found.
-func (m *MemTable) Get(key []byte) ( /*value*/ []byte, error) {
+// Get returns the value for a given key.
+func (m *MemTable) Get(key []byte) ( /*value*/ []byte, bool /*found*/) {
 	return m.skipList.Get(key)
 }
 
@@ -42,24 +41,24 @@ func (m *MemTable) Get(key []byte) ( /*value*/ []byte, error) {
 func (m *MemTable) Set(key, value []byte) /*shouldFlush*/ bool {
 	// Determine if key exists to update size accounting correctly.
 	// NOTE: Since skip list is initialized, we'll ignore `Set` returned error.
-	prevVal, alreadyExists, _ := m.skipList.Set(key, value)
-	if !alreadyExists {
+	prevVal, found := m.skipList.Set(key, value)
+	if !found { // New key.
 		m.entries++
 		m.heldBytes += len(key) + len(value)
-	} else {
+	} else { // Updating existing key.
 		m.heldBytes += len(value) - len(prevVal)
 	}
 
 	return m.entries >= *memtableFlushSize || m.heldBytes >= *memtableFlushSizeBytes
 }
 
-func (m *MemTable) Delete(key []byte) error {
-	prevVal, err := m.skipList.Delete(key)
-	if !errors.Is(err, ErrKeyNotFound) {
+func (m *MemTable) Delete(key []byte) /*found*/ bool {
+	prevVal, found := m.skipList.Delete(key)
+	if found {
 		m.entries--
 		m.heldBytes -= len(key) + len(prevVal)
 	}
-	return err
+	return found
 }
 
 // Pairs returns an iterator over all key-value pairs in the memtable.

@@ -14,7 +14,6 @@
 package storage
 
 import (
-	"errors"
 	"iter"
 	"math/rand"
 	"time"
@@ -71,13 +70,12 @@ func (s *SkipList[K, V]) randomLevel() int {
 	return lvl
 }
 
-// Get returns the value for key or ErrKeyNotFound if the key is absent.
+// Get returns the value for key and a boolean to indicate if it was found.
 // It traverses from the highest populated level down to level 0, advancing at
 // each level while the next key is still less than the target key.
-func (s *SkipList[K, V]) Get(key K) (V, error) {
-	var zero V
+func (s *SkipList[K, V]) Get(key K) (V, bool /*found*/) {
 	if s == nil || s.head == nil {
-		return zero, ErrKeyNotFound
+		return *new(V), false
 	}
 	node := s.head
 	// Traverse from top level down to level 0.
@@ -89,18 +87,15 @@ func (s *SkipList[K, V]) Get(key K) (V, error) {
 	// Candidate is at level 0 forward from node.
 	node = node.forwards[0]
 	if node != nil && s.compare(node.key, key) == 0 {
-		return node.value, nil
+		return node.value, true
 	}
-	return zero, ErrKeyNotFound
+	return *new(V), false
 }
 
 // Set inserts a new key/value or updates an existing one.
 // It records the immediate predecessors per level during the search, then
 // either updates in place or splices in a new node of random level.
-func (s *SkipList[K, V]) Set(key K, value V) (V /*previousVal*/, bool /*alreadyExists*/, error) {
-	if s == nil || s.head == nil {
-		return *new(V), false, errors.New("skip list not initialized")
-	}
+func (s *SkipList[K, V]) Set(key K, value V) (V /*previousVal*/, bool /*found*/) {
 	// Track the last nodes before the position at each level.
 	update := make([]*skipListNode[K, V], s.maxLevel)
 	node := s.head
@@ -114,7 +109,7 @@ func (s *SkipList[K, V]) Set(key K, value V) (V /*previousVal*/, bool /*alreadyE
 	if next := node.forwards[0]; next != nil && s.compare(next.key, key) == 0 {
 		prevVal := next.value
 		next.value = value
-		return prevVal, true, nil
+		return prevVal, true
 	}
 	// Insert a new node with a random level.
 	lvl := s.randomLevel()
@@ -130,15 +125,14 @@ func (s *SkipList[K, V]) Set(key K, value V) (V /*previousVal*/, bool /*alreadyE
 		update[i].forwards[i] = newNode
 	}
 
-	return *new(V), false, nil
+	return *new(V), false
 }
 
-// Delete removes key from the list or returns ErrKeyNotFound.
-// It finds predecessors at each level and rewires forward pointers to skip the
-// target node, then trims empty top levels.
-func (s *SkipList[K, V]) Delete(key K) (V /*previousVal*/, error) {
+// Delete removes key from the list and returns its previous value if found.
+// It finds predecessors at each level and rewires forward pointers to skip the target, then trims empty top levels.
+func (s *SkipList[K, V]) Delete(key K) (V /*previousVal*/, bool /*found*/) {
 	if s == nil || s.head == nil {
-		return *new(V), ErrKeyNotFound
+		return *new(V), false
 	}
 	update := make([]*skipListNode[K, V], s.maxLevel)
 	node := s.head
@@ -150,7 +144,7 @@ func (s *SkipList[K, V]) Delete(key K) (V /*previousVal*/, error) {
 	}
 	target := node.forwards[0]
 	if target == nil || s.compare(target.key, key) != 0 {
-		return *new(V), ErrKeyNotFound
+		return *new(V), false
 	}
 	prevVal := target.value
 	// Rewire forward pointers to remove target.
@@ -163,7 +157,7 @@ func (s *SkipList[K, V]) Delete(key K) (V /*previousVal*/, error) {
 	for s.level > 1 && s.head.forwards[s.level-1] == nil {
 		s.level--
 	}
-	return prevVal, nil
+	return prevVal, true
 }
 
 // Iterate returns an iterator over all key/value pairs in ascending key order.
