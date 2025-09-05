@@ -24,12 +24,10 @@ func lcpLen(k1, k2 []byte) int {
 	return longestCommon
 }
 
-type Pair struct{ Key, Value []byte }
-
 // compressDataBlocks splits a sorted list of keys into optimal prefixed blocks.
 // Each block stores one shared prefix and per-key suffixes, minimizing total bytes.
 // Tie-breaker: on equal savings prefer fewer blocks (i.e., longer blocks).
-func compressDataBlocks(pairs []Pair) ([] /*prefix*/ []byte, []*kiwipb.DataBlock) {
+func compressDataBlocks(pairs []BytePair) ([] /*prefix*/ []byte, []*kiwipb.DataBlock) {
 	pairsNum := len(pairs)
 	if pairsNum == 0 {
 		return nil, nil

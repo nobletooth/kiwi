@@ -182,7 +182,7 @@ func (br *BlockReader) ReadBlock(offset int64, msg proto.Message) (int64 /*nextO
 
 	// Read the block data.
 	blockSize := int64(binary.LittleEndian.Uint64(sizeBuf))
-	sectionReader := io.NewSectionReader(br.reader, int64(offset+8), blockSize)
+	sectionReader := io.NewSectionReader(br.reader, offset+8, blockSize)
 	blockBuffer := bufferPool.Get().(*bytes.Buffer)
 	defer func() {
 		blockBuffer.Reset()

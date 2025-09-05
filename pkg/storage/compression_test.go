@@ -10,7 +10,7 @@ import (
 func TestCompressDataBlocks(t *testing.T) {
 	for _, testCase := range []struct {
 		name           string
-		pairs          []Pair
+		pairs          []BytePair
 		expectedPrefix [][]byte
 		expectedBlocks []*kiwipb.DataBlock
 	}{
@@ -22,13 +22,13 @@ func TestCompressDataBlocks(t *testing.T) {
 		},
 		{ // There's no reason to split a single pair into multiple blocks.
 			name:           "single pair",
-			pairs:          []Pair{{Key: []byte{1, 2, 3}, Value: []byte{4, 5, 6}}},
+			pairs:          []BytePair{{Key: []byte{1, 2, 3}, Value: []byte{4, 5, 6}}},
 			expectedPrefix: [][]byte{{}},
 			expectedBlocks: []*kiwipb.DataBlock{{Keys: [][]byte{{1, 2, 3}}, Values: [][]byte{{4, 5, 6}}}},
 		},
 		{
 			name: "multiple pairs with common prefix",
-			pairs: []Pair{
+			pairs: []BytePair{
 				// Two following keys share prefix {1, 2}.
 				{Key: []byte{1, 2, 3}, Value: []byte{4}},
 				{Key: []byte{1, 2, 4}, Value: []byte{5}},
@@ -44,7 +44,7 @@ func TestCompressDataBlocks(t *testing.T) {
 		},
 		{ // Both {1,2,3} and {1,2} are common prefixes, but we should pick the shorter one (counter-intuitive).
 			name: "non-trivial common prefix",
-			pairs: []Pair{
+			pairs: []BytePair{
 				// Following keys share prefix {1, 2, 3}.
 				{Key: []byte{1, 2, 3, 4}, Value: []byte{4}},
 				{Key: []byte{1, 2, 3, 5}, Value: []byte{5}},

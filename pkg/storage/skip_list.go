@@ -15,6 +15,7 @@ package storage
 
 import (
 	"errors"
+	"iter"
 	"math/rand"
 	"time"
 )
@@ -96,9 +97,9 @@ func (s *SkipList[K, V]) Get(key K) (V, error) {
 // Set inserts a new key/value or updates an existing one.
 // It records the immediate predecessors per level during the search, then
 // either updates in place or splices in a new node of random level.
-func (s *SkipList[K, V]) Set(key K, value V) error {
+func (s *SkipList[K, V]) Set(key K, value V) ( /*alreadyExists*/ bool, error) {
 	if s == nil || s.head == nil {
-		return errors.New("skip list not initialized")
+		return false, errors.New("skip list not initialized")
 	}
 	// Track the last nodes before the position at each level.
 	update := make([]*skipListNode[K, V], s.maxLevel)
@@ -112,7 +113,7 @@ func (s *SkipList[K, V]) Set(key K, value V) error {
 	// Check if the key already exists at level 0.
 	if next := n.forwards[0]; next != nil && s.compare(next.key, key) == 0 {
 		next.value = value
-		return nil
+		return true, nil
 	}
 	// Insert a new node with a random level.
 	lvl := s.randomLevel()
@@ -127,7 +128,7 @@ func (s *SkipList[K, V]) Set(key K, value V) error {
 		newNode.forwards[i] = update[i].forwards[i]
 		update[i].forwards[i] = newNode
 	}
-	return nil
+	return false, nil
 }
 
 // Delete removes key from the list or returns ErrKeyNotFound.
@@ -159,6 +160,21 @@ func (s *SkipList[K, V]) Delete(key K) error {
 		s.level--
 	}
 	return nil
+}
+
+// Iterate returns an iterator over all key/value pairs in ascending key order.
+// Usage: pairs := slices.Collect(skipList.Iterate())
+func (s *SkipList[K, V]) Iterate() iter.Seq[Pair[K, V]] {
+	return func(yield func(Pair[K, V]) bool) {
+		if s == nil || s.head == nil {
+			return
+		}
+		for noteIter := s.head.forwards[0]; noteIter != nil; noteIter = noteIter.forwards[0] {
+			if !yield(Pair[K, V]{Key: noteIter.key, Value: noteIter.value}) {
+				return
+			}
+		}
+	}
 }
 
 // Close releases no resources to free for now.
