@@ -17,7 +17,7 @@ import (
 var printVersion = flag.Bool("print_version", false, "Print the version and exit.")
 
 func main() {
-	flag.Parse()
+	utils.InitFlags()
 	utils.InitLogging()
 
 	if *printVersion {
