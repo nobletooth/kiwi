@@ -24,10 +24,10 @@ type BytePair Pair[[]byte /*key*/, []byte /*value*/]
 // MemTable serves the latest key-value pairs in memory before they are flushed to disk.
 type MemTable struct {
 	// skipList allows fast lookup, insertion, and deletion of key-value pairs.
-	skipList         *SkipList[[]byte /*key*/, []byte /*value*/]
-	mux              sync.RWMutex // Protects against race conditions.
-	table, prevTable int64        // Current and previous table IDs; used when flushing SSTables.
-	entries          int          // Size is tracked for flush thresholds.
+	skipList           *SkipList[[]byte /*key*/, []byte /*value*/]
+	mux                sync.RWMutex // Protects against race conditions.
+	table, prevTable   int64        // Current and previous table IDs; used when flushing SSTables.
+	entries, heldBytes int          // Size is tracked for flush thresholds.
 }
 
 // NewMemTable is the constructor for MemTable.
@@ -41,6 +41,7 @@ func NewMemTable(prevTable, table int64) (*MemTable, error) {
 		skipList:  NewSkipList[[]byte /*key*/, []byte /*value*/](bytes.Compare),
 		table:     table,
 		prevTable: prevTable,
+		entries:   0, heldBytes: 0,
 	}, nil
 }
 
@@ -58,9 +59,12 @@ func (m *MemTable) Set(key, value []byte) error {
 
 	// Determine if key exists to update size accounting correctly.
 	// NOTE: Since skip list is initialized, we'll ignore `Set` returned error.
-	alreadyExists, _ := m.skipList.Set(key, value)
+	prevVal, alreadyExists, _ := m.skipList.Set(key, value)
 	if !alreadyExists {
 		m.entries++
+		m.heldBytes += len(key) + len(value)
+	} else {
+		m.heldBytes += len(value) - len(prevVal)
 	}
 
 	return nil
@@ -70,9 +74,10 @@ func (m *MemTable) Delete(key []byte) error {
 	m.mux.Lock()
 	defer m.mux.Unlock()
 
-	err := m.skipList.Delete(key)
+	prevVal, err := m.skipList.Delete(key)
 	if !errors.Is(err, ErrKeyNotFound) {
 		m.entries--
+		m.heldBytes -= len(key) + len(prevVal)
 	}
 
 	return err
@@ -81,6 +86,5 @@ func (m *MemTable) Delete(key []byte) error {
 func (m *MemTable) Close() error {
 	m.mux.Lock()
 	defer m.mux.Unlock()
-
 	return m.skipList.Close()
 }

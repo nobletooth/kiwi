@@ -31,15 +31,17 @@ func assertHasKey[K any, V any](t *testing.T, skipList *SkipList[K, V], key K, e
 // setNewKey puts the given `key` and `value` into the `skipList` and asserts that the key was not present before.
 func setNewKey[K any, V any](t *testing.T, skipList *SkipList[K, V], key K, value V) {
 	t.Helper()
-	exists, err := skipList.Set(key, value)
+	prevVal, exists, err := skipList.Set(key, value)
+	assert.Zero(t, prevVal, "Expected previous value to be zero value.")
 	assert.Falsef(t, exists, "Expected key %s to be new.", fmt.Sprint(key))
 	assert.NoError(t, err)
 }
 
 // updateExistingKey updates the `key` with `value` and asserts that the key was present before.
-func updateExistingKey[K any, V any](t *testing.T, skipList *SkipList[K, V], key K, value V) {
+func updateExistingKey[K any, V any](t *testing.T, skipList *SkipList[K, V], key K, value, expectedPrev V) {
 	t.Helper()
-	exists, err := skipList.Set(key, value)
+	prevVal, exists, err := skipList.Set(key, value)
+	assert.Equal(t, expectedPrev, prevVal)
 	assert.Truef(t, exists, "Expected key %s to be already exist.", fmt.Sprint(key))
 	assert.NoError(t, err)
 }
@@ -58,14 +60,16 @@ func TestSkipList_SetAndGet_Simple(t *testing.T) {
 func TestSkipList_UpdateValue(t *testing.T) {
 	skipList := NewSkipList[int, string](cmp.Compare)
 	setNewKey(t, skipList, 10, "ten")
-	updateExistingKey(t, skipList, 10, "TEN")
+	updateExistingKey(t, skipList, 10, "TEN", "ten")
 	assertHasKey(t, skipList, 10, "TEN")
 }
 
 func TestSkipList_Delete(t *testing.T) {
 	skipList := NewSkipList[int, string](cmp.Compare)
-	// Deleting a missing key returns ErrKeyNotFound
-	assert.ErrorIs(t, skipList.Delete(7), ErrKeyNotFound)
+	// Deleting a missing key returns ErrKeyNotFound.
+	prev, err := skipList.Delete(7)
+	assert.Zero(t, prev, "Expected previous value to be zero value.")
+	assert.ErrorIs(t, err, ErrKeyNotFound)
 
 	// Insert some and delete one
 	for _, testCase := range []struct {
@@ -74,14 +78,20 @@ func TestSkipList_Delete(t *testing.T) {
 	}{{k: 1, v: "a"}, {k: 2, v: "b"}, {k: 3, v: "c"}} {
 		setNewKey(t, skipList, testCase.k, testCase.v)
 	}
-	assert.NoError(t, skipList.Delete(2))
-	_, err := skipList.Get(2)
-	assert.ErrorIs(t, err, ErrKeyNotFound)
-	// Deleting again should return ErrKeyNotFound.
-	assert.ErrorIs(t, skipList.Delete(2), ErrKeyNotFound)
-	// Other keys remain.
-	assertHasKey(t, skipList, 1, "a")
-	assertHasKey(t, skipList, 3, "c")
+	{ // Deleting twice should return ErrKeyNotFound.
+		prev, err := skipList.Delete(2)
+		assert.Equal(t, prev, "b")
+		assert.NoError(t, err)
+		_, err = skipList.Get(2)
+		assert.ErrorIs(t, err, ErrKeyNotFound)
+		prev, err = skipList.Delete(2)
+		assert.Zero(t, prev)
+		assert.ErrorIs(t, err, ErrKeyNotFound)
+	}
+	{ // Other keys remain.
+		assertHasKey(t, skipList, 1, "a")
+		assertHasKey(t, skipList, 3, "c")
+	}
 }
 
 func TestSkipList_StringKeys(t *testing.T) {
@@ -121,7 +131,7 @@ func TestSkipList_IterateCollect(t *testing.T) {
 		}, gotPairs)
 	}
 	{ // Updating a key should reflect in iteration.
-		updateExistingKey(t, skipList, 2, "TWO")
+		updateExistingKey(t, skipList, 2, "TWO", "two")
 		pairs := slices.Collect(skipList.Iterate())
 		assert.Equal(t, "TWO", pairs[1].Value)
 	}
