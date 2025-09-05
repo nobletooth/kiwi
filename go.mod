@@ -9,6 +9,7 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/stretchr/testify v1.11.1
 	github.com/tidwall/redcon v1.6.2
+	golang.org/x/mod v0.27.0
 	google.golang.org/protobuf v1.36.6
 )
 

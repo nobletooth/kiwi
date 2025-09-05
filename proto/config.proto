@@ -1,0 +1,26 @@
+syntax = "proto3";
+package kiwi;
+
+option go_package = "github.com/nobletooth/kiwi/proto";
+
+import "google/protobuf/descriptor.proto";
+
+// Allows annotating fields with a flag_name, so Kiwi would set each config's value to its corresponding flag.
+// For example: string hostname = 1 [(options.flag_name) = "server.host"];
+extend google.protobuf.FieldOptions {
+  // The string value will be the name of the command-line flag.
+  string flag_name = 50001;
+}
+
+message Config {
+  Server server = 1;
+  message Server {
+    // The server address in host:port format, i.e. 0.0.0.0:6379.
+    string address = 1 [(flag_name) = "address"];
+  }
+
+  Index index = 2;
+  message Index {
+    double bf_false_positive_rate = 1 [(flag_name) = "bloom_filter_false_positive_rate"];
+  }
+}
