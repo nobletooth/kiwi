@@ -8,8 +8,8 @@ import (
 )
 
 func TestMemTable_Get(t *testing.T) {
-	memTable, err := NewMemTable(0 /*prevTable*/, 1 /*table*/)
-	assert.NoError(t, err)
+	memTable := NewMemTable()
+	assert.NotNil(t, memTable)
 	_ = memTable.Set([]byte("k"), []byte("v"))
 
 	t.Run("existing_key", func(t *testing.T) {
@@ -26,8 +26,8 @@ func TestMemTable_Get(t *testing.T) {
 func TestMemTable_Set(t *testing.T) {
 	utils.SetTestFlag(t, "memtable_flush_size_bytes", "9")
 	utils.SetTestFlag(t, "memtable_flush_size", "3")
-	memTable, err := NewMemTable(0 /*prevTable*/, 1 /*table*/)
-	assert.NoError(t, err)
+	memTable := NewMemTable()
+	assert.NotNil(t, memTable)
 
 	{ // Set first key.
 		shouldFlush := memTable.Set([]byte("a"), []byte("12"))
@@ -64,8 +64,8 @@ func TestMemTable_Set(t *testing.T) {
 }
 
 func TestMemTable_Delete(t *testing.T) {
-	memTable, err := NewMemTable(0 /*prevTable*/, 1 /*table*/)
-	assert.NoError(t, err)
+	memTable := NewMemTable()
+	assert.NotNil(t, memTable)
 	// Set a couple of keys.
 	_ = memTable.Set([]byte("a"), []byte("1"))
 	_ = memTable.Set([]byte("b"), []byte("2"))
