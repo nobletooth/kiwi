@@ -14,7 +14,6 @@
 //  - Data  : Actual key-value pairs stripped of their common prefixes, organized in blocks.
 //            Each block contains a list of keys and their corresponding values, sorted by key.
 
-
 syntax = "proto3";
 package kiwi;
 
