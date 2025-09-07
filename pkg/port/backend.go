@@ -23,7 +23,7 @@ func NewKiwiStorage() (*KiwiStorage, error) {
 		return nil, errors.New("--data_dir flag is required")
 	}
 	// TODO: Allow support for multi tables (multi Redis DBs).
-	db, err := storage.NewLSMTree(*dataDir, 0 /*table*/)
+	db, err := storage.NewLSMTree(*dataDir, 1 /*table*/)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create db: %w", err)
 	}
