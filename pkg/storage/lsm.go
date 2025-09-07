@@ -20,25 +20,8 @@ import (
 	"github.com/nobletooth/kiwi/pkg/utils"
 )
 
-// Opts represents options for storing a key-value pair.
-type Opts uint8
-
-// Toggled returns true if any of the given options are toggled in the current options.
-func (o Opts) Toggled(opts Opts) bool {
-	return o&opts != 0
-}
-
-const (
-	// TombStone is when a key is deleted. We put a tombstone marker instead of actually deleting the key.
-	// This is because in LSM tree, we cannot delete a key from disk immediately, as it may exist in multiple SSTables.
-	// Instead, we mark the key as deleted with a tombstone, and during compaction, the key would be removed.
-	TombStone Opts = 1 << iota
-	// Expirable is when a key has an expiration time set; Expired keys would be removed during compaction.
-	Expirable
-)
-
 // LSMTree represents a log-structured merge tree (LSM tree) for a specific Kiwi table (Redis db).
-type LSMTree struct {
+type LSMTree struct { // Implements KeyValueHolder.
 	table           int64        // The Kiwi table ID (Redis db number).
 	dir             string       // Path where tables files are stored; ends with table.
 	mux             sync.RWMutex // Protects against race conditions.
@@ -46,6 +29,8 @@ type LSMTree struct {
 	latestDiskTable *SSTable     // Disk lookups are started from the latest disk table.
 	diskTables      map[ /*partId*/ int64]*SSTable
 }
+
+var _ KeyValueHolder = (*LSMTree)(nil)
 
 // NewLSMTree is the constructor for LSMTree.
 // The given `dataDir` path would be used to store the entire table parts, i.e. the .sst files.
@@ -128,18 +113,9 @@ func NewLSMTree(dataDir string, table int64) (*LSMTree, error) {
 	return lsm, nil
 }
 
-func (l *LSMTree) Get(key []byte) ([]byte, error) {
-	if len(key) == 0 {
-		return nil, fmt.Errorf("expected a non-empty key")
-	}
-
-	l.mux.RLock()
-	defer l.mux.RUnlock()
-	// First check the memtable.
-	if val, exists := l.memTable.Get(key); exists {
-		return val, nil
-	}
-	// Then check the disk tables, starting from the latest one.
+// lookupDiskTables finds the value of the given key. NOTE: Caller should acquire lock.
+func (l *LSMTree) lookupDiskTables(key []byte) ([]byte, error) {
+	// Since the latest parts contain the most recent values, we'll start our lookup from there.
 	for partId := l.latestDiskTable.header.GetId(); partId > 0; {
 		sst, exists := l.diskTables[partId]
 		if !exists || sst == nil {
@@ -152,33 +128,36 @@ func (l *LSMTree) Get(key []byte) ([]byte, error) {
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("failed to get key from sstable %d: %v", partId, err)
+			return nil, fmt.Errorf("failed to lookupDiskTables key from sstable %d: %v", partId, err)
 		}
 		return val, nil
 	}
+
 	return nil, ErrKeyNotFound
 }
 
-// Set sets the given key-value pair in the LSM tree.
-func (l *LSMTree) Set(key, value []byte) error {
+func (l *LSMTree) Get(key []byte) ([]byte, error) {
 	if len(key) == 0 {
-		return fmt.Errorf("expected a non-empty key")
+		return nil, fmt.Errorf("expected a non-empty key")
 	}
-
-	l.mux.Lock()
-	defer l.mux.Unlock()
-
-	shouldFlush := l.memTable.Set(key, value)
-	if !shouldFlush {
-		return nil
+	l.mux.RLock()
+	defer l.mux.RUnlock()
+	// First check the memtable.
+	if val, exists := l.memTable.Get(key); exists {
+		return val, nil
 	}
+	// If not found in memory, we'll look it up from disk.
+	return l.lookupDiskTables(key)
+}
 
+// flushMemTable flushes the currently held memTable to disk. NOTE: Caller should acquire lock.
+func (l *LSMTree) flushMemTable() error {
 	// Memtable is full, flush it to disk.
 	prevPartId := l.latestDiskTable.header.GetId()
 	nextPartId := prevPartId + 1
 	tablePath := filepath.Join(l.dir, fmt.Sprintf("%d.sst", nextPartId))
 	if err := writeSSTable(prevPartId, nextPartId, slices.Collect(l.memTable.Pairs()), tablePath); err != nil {
-		return fmt.Errorf("failed to flush memtable to disk: %v", err)
+		return fmt.Errorf("failed to write sstable to disk: %v", err)
 	}
 
 	sst, err := NewSSTable(tablePath)
@@ -194,6 +173,49 @@ func (l *LSMTree) Set(key, value []byte) error {
 	l.latestDiskTable = sst
 	l.memTable = NewMemTable() // Reset memtable.
 	return nil
+}
+
+// Set sets the given key-value pair in the LSM tree.
+func (l *LSMTree) Set(key, value []byte) error {
+	if len(key) == 0 {
+		return fmt.Errorf("expected a non-empty key")
+	}
+
+	l.mux.Lock()
+	defer l.mux.Unlock()
+
+	if shouldFlush := l.memTable.Set(key, value); shouldFlush {
+		return l.flushMemTable()
+	}
+
+	return nil
+}
+
+// Swap stores the given key, value in the storage and returns the previous value corresponding to the key.
+func (l *LSMTree) Swap(key, value []byte) ( /*previousValue*/ []byte, error) {
+	l.mux.Lock()
+	defer l.mux.Unlock()
+
+	shouldFlush, foundOnMem, prevValue := l.memTable.Swap(key, value)
+	if shouldFlush { // Flush memtable when we're done.
+		if err := l.flushMemTable(); err != nil {
+			return nil, err
+		}
+	}
+	// If the mem table contains the previous value, we won't need to go further and lookup on disk.
+	if foundOnMem {
+		return prevValue, nil
+	}
+	// Look up disk for the previous value.
+	prevValueOnDisk, err := l.lookupDiskTables(key)
+	if err == nil {
+		return prevValueOnDisk, nil
+	}
+	if errors.Is(err, ErrKeyNotFound) {
+		return nil, ErrKeyNotFound
+	}
+
+	return nil, fmt.Errorf("failed to swap key %v: %w", key, err)
 }
 
 // Close closes every SSTable in the LSM tree.

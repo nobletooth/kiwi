@@ -37,8 +37,8 @@ func (m *MemTable) Get(key []byte) ( /*value*/ []byte, bool /*found*/) {
 	return m.skipList.Get(key)
 }
 
-// Set inserts or updates the value for a given key.
-func (m *MemTable) Set(key, value []byte) /*shouldFlush*/ bool {
+// Swap sets the given {key,value} pair, returning the previous value corresponding to the key.
+func (m *MemTable) Swap(key, value []byte) (bool /*shouldFlush*/, bool /*found*/, []byte /*previousValue*/) {
 	// Determine if key exists to update size accounting correctly.
 	// NOTE: Since skip list is initialized, we'll ignore `Set` returned error.
 	prevVal, found := m.skipList.Set(key, value)
@@ -48,8 +48,13 @@ func (m *MemTable) Set(key, value []byte) /*shouldFlush*/ bool {
 	} else { // Updating existing key.
 		m.heldBytes += len(value) - len(prevVal)
 	}
+	return m.entries >= *memtableFlushSize || m.heldBytes >= *memtableFlushSizeBytes, found, prevVal
+}
 
-	return m.entries >= *memtableFlushSize || m.heldBytes >= *memtableFlushSizeBytes
+// Set inserts or updates the value for a given key.
+func (m *MemTable) Set(key, value []byte) /*shouldFlush*/ bool {
+	shouldFlush, _, _ := m.Swap(key, value)
+	return shouldFlush
 }
 
 func (m *MemTable) Delete(key []byte) /*found*/ bool {
