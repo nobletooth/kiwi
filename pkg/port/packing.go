@@ -29,8 +29,9 @@ const (
 )
 
 var (
-	tombstoneMarker = unpackedValue{opt: TombStone}
-	emptyUnpacked   = unpackedValue{}
+	tombstoneUnpacked = unpackedValue{opt: TombStone}
+	tombstonePacked   = tombstoneUnpacked.pack()
+	emptyUnpacked     = unpackedValue{}
 )
 
 // unpackedValue represents a value that has been unpacked from the storage format.
@@ -47,7 +48,7 @@ func unpack(packed []byte) (unpackedValue, error) {
 	}
 	opt := Opts(packed[0])
 	if opt.Is(TombStone) {
-		return tombstoneMarker, nil
+		return tombstoneUnpacked, nil
 	}
 
 	var value []byte

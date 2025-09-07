@@ -10,7 +10,6 @@ import (
 	"os/signal"
 
 	"github.com/nobletooth/kiwi/pkg/port"
-	"github.com/nobletooth/kiwi/pkg/storage"
 	"github.com/nobletooth/kiwi/pkg/utils"
 )
 
@@ -37,7 +36,12 @@ func main() {
 		}
 	}()
 
-	store := storage.NewInMemoryKeyValueHolder()
+	store, err := port.NewKiwiStorage()
+	if err != nil {
+		slog.Error("Failed to instantiate a Kiwi storage instance.", "err", err)
+		os.Exit(1)
+	}
+
 	if err := port.RunRedisServer(ctx, store); err != nil {
 		slog.Error("Kiwi server stopped.", "err", err)
 		os.Exit(1)
