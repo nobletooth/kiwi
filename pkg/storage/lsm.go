@@ -156,10 +156,13 @@ func (l *LSMTree) flushMemTable() error {
 	prevPartId := l.latestDiskTable.header.GetId()
 	nextPartId := prevPartId + 1
 	tablePath := filepath.Join(l.dir, fmt.Sprintf("%d.sst", nextPartId))
-	if err := writeSSTable(prevPartId, nextPartId, slices.Collect(l.memTable.Pairs()), tablePath); err != nil {
+	pairs := slices.Collect(l.memTable.Pairs())
+	if len(pairs) == 0 {
+		return nil
+	}
+	if err := writeSSTable(prevPartId, nextPartId, pairs, tablePath); err != nil {
 		return fmt.Errorf("failed to write sstable to disk: %v", err)
 	}
-
 	sst, err := NewSSTable(tablePath)
 	if err != nil {
 		return fmt.Errorf("failed to load newly created sstable %s: %v", tablePath, err)
@@ -228,6 +231,9 @@ func (l *LSMTree) Close() error {
 	defer l.mux.Unlock()
 
 	var errs error
+	if err := l.flushMemTable(); err != nil {
+		errs = err
+	}
 	for _, sst := range l.diskTables {
 		if sst == nil {
 			continue
