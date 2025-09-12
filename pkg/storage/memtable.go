@@ -13,13 +13,6 @@ var (
 		"Triggers mem table flush when number of key-value entries reaches this count.")
 )
 
-type Pair[K any, V any] struct {
-	Key   K
-	Value V
-}
-
-type BytePair Pair[[]byte /*key*/, []byte /*value*/]
-
 // MemTable serves the latest key-value pairs in memory before they are flushed to disk.
 type MemTable struct {
 	// skipList allows fast lookup, insertion, and deletion of key-value pairs.
