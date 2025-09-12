@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/nobletooth/kiwi/pkg/utils"
+	"github.com/nobletooth/kiwi/pkg/config"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -56,7 +56,7 @@ func TestLSMTree(t *testing.T) {
 	lsm, err := NewLSMTree(t.TempDir(), 10 /*table*/)
 	assert.NoError(t, err)
 	// Setting a lower value for the flush so that SSTables are created and flushed to disk.
-	utils.SetTestFlag(t, "memtable_flush_size", "10")
+	config.SetTestFlag(t, "memtable_flush_size", "10")
 
 	t.Run("set", func(t *testing.T) { // Set some keys, k1:v1 to k50:v50.
 		for i := range 50 {

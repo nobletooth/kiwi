@@ -1,7 +1,7 @@
 // Kiwi uses flags and a single config file for configuration.
 // A config file is stored in .txtpb format and contains the values that can be set via flags.
 
-package utils
+package config
 
 import (
 	"encoding/base64"

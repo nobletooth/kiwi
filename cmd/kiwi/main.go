@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/nobletooth/kiwi/pkg/config"
 	"github.com/nobletooth/kiwi/pkg/port"
 	"github.com/nobletooth/kiwi/pkg/utils"
 )
@@ -16,7 +17,7 @@ import (
 var printVersion = flag.Bool("print_version", false, "Print the version and exit.")
 
 func main() {
-	utils.InitFlags()
+	config.InitFlags()
 	utils.InitLogging()
 
 	if *printVersion {

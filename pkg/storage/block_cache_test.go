@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/nobletooth/kiwi/pkg/cache"
-	"github.com/nobletooth/kiwi/pkg/utils"
+	"github.com/nobletooth/kiwi/pkg/config"
 	kiwipb "github.com/nobletooth/kiwi/proto"
 	"github.com/stretchr/testify/assert"
 )
@@ -19,7 +19,7 @@ func TestGetSharedCache(t *testing.T) {
 
 func TestNewBlockCache(t *testing.T) {
 	t.Run("single_shard", func(t *testing.T) {
-		utils.SetTestFlag(t, "block_cache_shard_count", "1")
+		config.SetTestFlag(t, "block_cache_shard_count", "1")
 		blockCache := newBlockCache()
 		assert.NotNil(t, blockCache)
 		_, isSingleShard := blockCache.internalCache.(*cache.HyperClock[dbCacheKey, *kiwipb.DataBlock])
@@ -27,28 +27,28 @@ func TestNewBlockCache(t *testing.T) {
 		assert.True(t, isSingleShard, "Expected single shard cache")
 	})
 	t.Run("multi_shard", func(t *testing.T) {
-		utils.SetTestFlag(t, "block_cache_shard_count", "10")
+		config.SetTestFlag(t, "block_cache_shard_count", "10")
 		blockCache := newBlockCache()
 		assert.NotNil(t, blockCache)
 		_, isMultiShard := blockCache.internalCache.(*cache.Sharded[dbCacheKey, *kiwipb.DataBlock])
 		assert.True(t, isMultiShard, "Expected multi shard cache")
 	})
 	t.Run("zero_shard", func(t *testing.T) {
-		utils.SetTestFlag(t, "block_cache_shard_count", "0")
+		config.SetTestFlag(t, "block_cache_shard_count", "0")
 		blockCache := newBlockCache()
 		assert.NotNil(t, blockCache)
 		_, isNoOp := blockCache.internalCache.(*cache.NoOp[dbCacheKey, *kiwipb.DataBlock])
 		assert.True(t, isNoOp, "Expected no op cache")
 	})
 	t.Run("zero_capacity", func(t *testing.T) {
-		utils.SetTestFlag(t, "block_cache_capacity", "0")
+		config.SetTestFlag(t, "block_cache_capacity", "0")
 		blockCache := newBlockCache()
 		assert.NotNil(t, blockCache)
 		_, isNoOp := blockCache.internalCache.(*cache.NoOp[dbCacheKey, *kiwipb.DataBlock])
 		assert.True(t, isNoOp, "Expected no op cache")
 	})
 	t.Run("cache_disabled", func(t *testing.T) {
-		utils.SetTestFlag(t, "enable_block_cache", "false")
+		config.SetTestFlag(t, "enable_block_cache", "false")
 		blockCache := newBlockCache()
 		assert.NotNil(t, blockCache)
 		_, isNoOp := blockCache.internalCache.(*cache.NoOp[dbCacheKey, *kiwipb.DataBlock])

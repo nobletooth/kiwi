@@ -3,7 +3,7 @@ package storage
 import (
 	"testing"
 
-	"github.com/nobletooth/kiwi/pkg/utils"
+	"github.com/nobletooth/kiwi/pkg/config"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,8 +25,8 @@ func TestMemTable_Get(t *testing.T) {
 }
 
 func TestMemTable_Set(t *testing.T) {
-	utils.SetTestFlag(t, "memtable_flush_size_bytes", "9")
-	utils.SetTestFlag(t, "memtable_flush_size", "3")
+	config.SetTestFlag(t, "memtable_flush_size_bytes", "9")
+	config.SetTestFlag(t, "memtable_flush_size", "3")
 	memTable := NewMemTable()
 	assert.NotNil(t, memTable)
 
