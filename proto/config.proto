@@ -15,12 +15,45 @@ extend google.protobuf.FieldOptions {
 message Config {
   Server server = 1;
   message Server {
-    // The server address in host:port format, i.e. 0.0.0.0:6379.
+    // The server address in host:port format, i.e. "0.0.0.0:6379".
     string address = 1 [(flag_name) = "address"];
+    // The log level of the server; possible values are debug, info, warn, error.
+    string log_level = 2 [(flag_name) = "log_level"];
+    // The log handler type; possible values are json, text.
+    string log_handler = 3 [(flag_name) = "log_handler_type"];
   }
 
   Index index = 2;
   message Index {
+    // The false positive rate of each data block's bloom filter index; must be between 0 and 1.
     double bf_false_positive_rate = 1 [(flag_name) = "bloom_filter_false_positive_rate"];
+    // The minimum number of keys in a data block to create a bloom filter index for it.
+    int64 bf_min_keys = 2 [(flag_name) = "bloom_filter_min_keys"];
+  }
+
+  BlockCache block_cache = 3;
+  message BlockCache {
+    // Whether to enable the block cache.
+    bool enable = 1 [(flag_name) = "enable_block_cache"];
+    // The maximum number of key values in the block cache; if zero or negative, block caching is disabled.
+    int64 capacity = 2 [(flag_name) = "block_cache_capacity"];
+    // The total number of shards in the block cache; if zero or negative, cache sharding is disabled.
+    int64 shard_count = 3 [(flag_name) = "block_cache_shard_count"];
+    // Interval in duration format (e.g. 1s or 25m) that the block cache sweeps happen.
+    string tick_interval = 4 [(flag_name) = "block_cache_tick_interval"];
+    // Time-to-live in duration format (e.g. 1s or 25m) for each block cache entry.
+    string ttl = 5 [(flag_name) = "block_cache_ttl"];
+  }
+
+  Data data = 4;
+  message Data {
+    // The directory that data is stored at.
+    string dir = 1 [(flag_name) = "data_dir"];
+    // The temporary folder used for compactions and other temporary written files.
+    string temp_folder = 2 [(flag_name) = "temp_folder"];
+    // The size threshold in number of key values to trigger a memtable flush.
+    int64 block_flush_size = 3 [(flag_name) = "memtable_flush_size"];
+    // The size threshold in bytes to trigger a memtable flush.
+    int64 block_flush_size_bytes = 4 [(flag_name) = "memtable_flush_size_bytes"];
   }
 }

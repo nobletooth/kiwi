@@ -7,15 +7,12 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
-	"io"
-	"log/slog"
-	"os"
+	"slices"
 	"strconv"
-	"testing"
+	"strings"
 	"time"
 
 	kiwipb "github.com/nobletooth/kiwi/proto"
-	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -23,7 +20,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-var configFile = flag.String("config_file", "config.txtpb", "Path to the configuration file.")
+// skippedProtobufFlags is the list of command line flags on which the protobuf check is disabled.
+var skippedProtobufFlags = []string{"print_version", "config_file"}
 
 // protobufValueToString converts a protobuf field value to its string representation suitable for flag setting.
 func protobufValueToString(fd protoreflect.FieldDescriptor, v protoreflect.Value) (string, error) {
@@ -69,7 +67,10 @@ func protobufValueToString(fd protoreflect.FieldDescriptor, v protoreflect.Value
 	}
 }
 
-func setConfigFlags(m protoreflect.Message) error {
+// collectAndRegisterFlags collects all registered flags with their values from the given protobuf message.
+// The collected flags are put inside the given `flags` variable.
+// Each protobuf field can have a flag annotation attached to it that specifies its command line flag name.
+func collectAndRegisterFlags(flags map[ /*flagName*/ string] /*flagValue*/ string, m protoreflect.Message) error {
 	var err error
 	m.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
 		// Oneof blocks appear as regular set fields in Range. Lists/maps are not supported by design.
@@ -83,7 +84,7 @@ func setConfigFlags(m protoreflect.Message) error {
 			if !m.Has(fd) {
 				return true
 			}
-			err = setConfigFlags(v.Message())
+			err = collectAndRegisterFlags(flags, v.Message())
 			return err == nil
 		}
 		// If annotated, convert to string and set the target flag.
@@ -101,11 +102,12 @@ func setConfigFlags(m protoreflect.Message) error {
 				err = fmt.Errorf("failed to convert %s: %w", fd.FullName(), convErr)
 				return false
 			}
-			// Set the flag value.
-			if setErr := flag.Set(flagName, stringValue); setErr != nil {
-				err = fmt.Errorf("failed to set flag %s: %w", flagName, setErr)
+			// Check for duplicate flag entries.
+			if _, alreadyExists := flags[flagName]; alreadyExists {
+				err = fmt.Errorf("flag '%s' has multiple entries in txtpb config: '%s'", flagName, fd.FullName())
 				return false
 			}
+			flags[flagName] = stringValue
 		}
 		// Skip other fields.
 		return true
@@ -113,45 +115,72 @@ func setConfigFlags(m protoreflect.Message) error {
 	return err
 }
 
-// InitFlags initializes the flags from the config file specified by the -config_file flag.
-// It should be called after defining all flags and before using them.
-// Assumes config file doesn't have repeated/map fields. Supports nested messages and oneof blocks only.
-func InitFlags() {
-	flag.Parse()
-
-	configFile, err := os.Open(*configFile)
-	if err != nil { // If the config file cannot be opened, we skip loading and use default flag values.
-		slog.Error("Failed to open config file.", "error", err)
-		return
+// setConfigFlags sets all the filled flags in the given `conf` to the global flag variables.
+func setConfigFlags(conf *kiwipb.Config) error {
+	registeredFlags := make(map[ /*flagName*/ string] /*flagValue*/ string)
+	if err := collectAndRegisterFlags(registeredFlags, conf.ProtoReflect()); err != nil {
+		return fmt.Errorf("failed to collect flags: %w", err)
 	}
-	defer func() { _ = configFile.Close() }()
-
-	configBytes, err := io.ReadAll(configFile)
-	if err != nil {
-		slog.Error("Failed to read config file.", "error", err)
-		return
+	for flagName, flagValue := range registeredFlags {
+		if setErr := flag.Set(flagName, flagValue); setErr != nil {
+			return fmt.Errorf("failed to set flag %s: %w", flagName, setErr)
+		}
 	}
-
-	var conf kiwipb.Config
-	if err := prototext.Unmarshal(configBytes, &conf); err != nil {
-		slog.Error("Failed to parse config file.", "error", err)
-		return
-	}
-
-	if err := setConfigFlags(conf.ProtoReflect()); err != nil {
-		slog.Error("Failed to set flags from config file.", "error", err)
-		return
-	}
+	return nil
 }
 
-// SetTestFlag sets a flag to a specific value for the duration of the test.
-func SetTestFlag(t *testing.T, name, value string) {
-	t.Helper()
-	flagHolder := flag.Lookup(name)
-	require.NotNil(t, flagHolder, "Flag %s not found", name)
-	if flagHolder != nil { // Revert the flag value back to its original when the test is done.
-		prevValue := flagHolder.Value.String()
-		t.Cleanup(func() { require.NoError(t, flag.Set(name, prevValue)) })
+// getDefinedFlags returns the set of defined flags inside the given protobuf message schema.
+func getDefinedFlags(md protoreflect.MessageDescriptor) (map[ /*flagName*/ string]struct{}, error) {
+	flagSet := make(map[ /*flagName*/ string]struct{})
+	var walkFields func(md protoreflect.MessageDescriptor) error
+	walkFields = func(md protoreflect.MessageDescriptor) error {
+		for fieldIdx := 0; fieldIdx < md.Fields().Len(); fieldIdx++ {
+			fd := md.Fields().Get(fieldIdx)
+			if fd.IsList() || fd.IsMap() {
+				continue // Skip repeated/map fields.
+			}
+			if proto.HasExtension(fd.Options(), kiwipb.E_FlagName) {
+				ext := proto.GetExtension(fd.Options(), kiwipb.E_FlagName)
+				if flagName, ok := ext.(string); ok && flagName != "" {
+					if _, exists := flagSet[flagName]; exists {
+						return fmt.Errorf("duplicate flag name '%s' in config: %s", flagName, fd.FullName())
+					}
+					flagSet[flagName] = struct{}{}
+				}
+			}
+			if fd.Kind() == protoreflect.MessageKind {
+				if err := walkFields(fd.Message()); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	}
-	require.NoError(t, flag.Set(name, value))
+	if err := walkFields(md); err != nil {
+		return nil, err
+	}
+	return flagSet, nil
+}
+
+// CollectUnregisteredFlags collects all flags that haven't been registered in the protobuf config.
+// An error exists in the results corresponding to each unregistered flag.
+func CollectUnregisteredFlags() []error {
+	// Use the Config message descriptor from the generated proto package
+	definedFlags, err := getDefinedFlags(kiwipb.File_config_proto.Messages().ByName("Config"))
+	if err != nil {
+		return []error{err}
+	}
+	errs := make([]error, 0)
+	flag.VisitAll(func(f *flag.Flag) {
+		if strings.HasPrefix(f.Name, "test.") { // Skip test flags.
+			return
+		}
+		if slices.Contains(skippedProtobufFlags, f.Name) {
+			return
+		}
+		if _, flagHasConfigEntry := definedFlags[f.Name]; !flagHasConfigEntry {
+			errs = append(errs, fmt.Errorf("flag '%s' has not been defined in protobuf config", f.Name))
+		}
+	})
+	return errs
 }
