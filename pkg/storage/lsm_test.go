@@ -1,10 +1,12 @@
 package storage
 
 import (
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"testing"
 
+	"github.com/nobletooth/kiwi/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -47,5 +49,36 @@ func TestNewLSMTree(t *testing.T) {
 		assert.Equal(t, int64(1), lsm.diskTables[2].header.GetPrevPart())
 		assert.Equal(t, int64(2), lsm.diskTables[2].header.GetId())
 		assert.Same(t, lsm.latestDiskTable, lsm.diskTables[2])
+	})
+}
+
+func TestLSMTree(t *testing.T) {
+	lsm, err := NewLSMTree(t.TempDir(), 10 /*table*/)
+	assert.NoError(t, err)
+	// Setting a lower value for the flush so that SSTables are created and flushed to disk.
+	utils.SetTestFlag(t, "memtable_flush_size", "10")
+
+	t.Run("set", func(t *testing.T) { // Set some keys, k1:v1 to k50:v50.
+		for i := range 50 {
+			assert.NoError(t, lsm.Set([]byte("k"+strconv.Itoa(i)), []byte(fmt.Sprintf("v%d", i))))
+		}
+		// Since 50 entries were added and flush size was 10, 5 SSTables should be created.
+		assert.Len(t, lsm.diskTables, 5)
+	})
+	t.Run("get", func(t *testing.T) { // Get all and make sure they exist.
+		for i := range 50 {
+			val, err := lsm.Get([]byte("k" + strconv.Itoa(i)))
+			assert.NoError(t, err)
+			assert.Equal(t, []byte(fmt.Sprintf("v%d", i)), val)
+		}
+	})
+	t.Run("swap", func(t *testing.T) { // Shift the values 50 to the right by swapping.
+		for i := range 50 {
+			prevVal, err := lsm.Swap([]byte("k"+strconv.Itoa(i)), []byte(fmt.Sprintf("v%d", i+50)))
+			assert.NoError(t, err)
+			assert.Equal(t, []byte(fmt.Sprintf("v%d", i)), prevVal)
+		}
+		// Since after swapping all keys, 50 new entries were added we expect the total SSTable count to be 10.
+		assert.Len(t, lsm.diskTables, 10)
 	})
 }

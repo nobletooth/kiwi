@@ -209,26 +209,37 @@ func (l *LSMTree) Swap(key, value []byte) ( /*previousValue*/ []byte, error) {
 	l.mux.Lock()
 	defer l.mux.Unlock()
 
+	var (
+		returnValue []byte
+		found       = false
+	)
 	shouldFlush, foundOnMem, prevValue := l.memTable.Swap(key, value)
+	// If the mem table contains the previous value, we won't need to go further and lookup on disk.
+	if foundOnMem {
+		returnValue = prevValue
+		found = true
+	} else {
+		// Look up disk for the previous value.
+		prevValueOnDisk, err := l.lookupDiskTables(key)
+		if err == nil {
+			returnValue = prevValueOnDisk
+			found = true
+		} else if !errors.Is(err, ErrKeyNotFound) { // Some unexpected error happened.
+			return nil, fmt.Errorf("failed to swap key %v: %w", fmt.Sprint(key), err)
+		}
+	}
+
 	if shouldFlush { // Flush memtable when we're done.
 		if err := l.flushMemTable(); err != nil {
 			return nil, err
 		}
 	}
-	// If the mem table contains the previous value, we won't need to go further and lookup on disk.
-	if foundOnMem {
-		return prevValue, nil
-	}
-	// Look up disk for the previous value.
-	prevValueOnDisk, err := l.lookupDiskTables(key)
-	if err == nil {
-		return prevValueOnDisk, nil
-	}
-	if errors.Is(err, ErrKeyNotFound) {
+
+	if !found {
 		return nil, ErrKeyNotFound
 	}
 
-	return nil, fmt.Errorf("failed to swap key %v: %w", key, err)
+	return returnValue, nil
 }
 
 // Close closes every SSTable in the LSM tree.
