@@ -46,4 +46,6 @@ func main() {
 		slog.Error("Kiwi server stopped.", "err", err)
 		os.Exit(1)
 	}
+
+	slog.Info("Closed Kiwi.")
 }

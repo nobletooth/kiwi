@@ -11,6 +11,7 @@ package storage
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -115,6 +116,11 @@ func NewLSMTree(dataDir string, table int64) (*LSMTree, error) {
 
 // lookupDiskTables finds the value of the given key. NOTE: Caller should acquire lock.
 func (l *LSMTree) lookupDiskTables(key []byte) ([]byte, error) {
+	// Before any memtable is flushed, there are no disk tables, hence we'd short circuit here.
+	if l.latestDiskTable == nil {
+		return nil, ErrKeyNotFound
+	}
+
 	// Since the latest parts contain the most recent values, we'll start our lookup from there.
 	for partId := l.latestDiskTable.header.GetId(); partId > 0; {
 		sst, exists := l.diskTables[partId]
@@ -153,7 +159,10 @@ func (l *LSMTree) Get(key []byte) ([]byte, error) {
 // flushMemTable flushes the currently held memTable to disk. NOTE: Caller should acquire lock.
 func (l *LSMTree) flushMemTable() error {
 	// Memtable is full, flush it to disk.
-	prevPartId := l.latestDiskTable.header.GetId()
+	prevPartId := int64(0)
+	if l.latestDiskTable != nil {
+		prevPartId = l.latestDiskTable.header.GetId()
+	}
 	nextPartId := prevPartId + 1
 	tablePath := filepath.Join(l.dir, fmt.Sprintf("%d.sst", nextPartId))
 	pairs := slices.Collect(l.memTable.Pairs())
@@ -175,6 +184,7 @@ func (l *LSMTree) flushMemTable() error {
 	l.diskTables[nextPartId] = sst
 	l.latestDiskTable = sst
 	l.memTable = NewMemTable() // Reset memtable.
+	slog.Info("Flushed MemTable to disk.", "path", tablePath)
 	return nil
 }
 
@@ -230,6 +240,7 @@ func (l *LSMTree) Close() error {
 	l.mux.Lock()
 	defer l.mux.Unlock()
 
+	slog.Info("Closing LSM tree instance.")
 	var errs error
 	if err := l.flushMemTable(); err != nil {
 		errs = err

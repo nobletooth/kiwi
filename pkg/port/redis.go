@@ -171,6 +171,7 @@ func RunRedisServer(ctx context.Context, store *KiwiStorage) error {
 
 	select {
 	case <-ctx.Done():
+		slog.Info("Server context cancelled", "err", ctx.Err())
 		serverErr := redisServer.Close()
 		storeErr := store.Close()
 		if exitErr := errors.Join(serverErr, storeErr); exitErr != nil {
