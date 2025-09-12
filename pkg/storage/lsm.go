@@ -84,7 +84,7 @@ func NewLSMTree(dataDir string, table int64) (*LSMTree, error) {
 	// All SSTables would be the previous part of some other part, except the latest one.
 	var latestDiskTable *SSTable
 	for part, _ := range diskTables {
-		if _, exists := prevPartIds[part]; !exists {
+		if _, hasPrevPart := prevPartIds[part]; !hasPrevPart {
 			if latestDiskTable != nil {
 				tail := latestDiskTable.header.GetId()
 				utils.RaiseInvariant("lsm", "multi_tail_lsm", "Multiple latest parts found in lsm tree directory.",
@@ -169,7 +169,7 @@ func (l *LSMTree) flushMemTable() error {
 	if len(pairs) == 0 {
 		return nil
 	}
-	if err := writeSSTable(prevPartId, nextPartId, pairs, tablePath); err != nil {
+	if err := writeSSTable(prevPartId, nextPartId, tablePath, pairs); err != nil {
 		return fmt.Errorf("failed to write sstable to disk: %v", err)
 	}
 	sst, err := NewSSTable(tablePath)
