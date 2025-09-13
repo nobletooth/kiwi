@@ -1,0 +1,48 @@
+package port
+
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/nobletooth/kiwi/pkg/config"
+	"github.com/nobletooth/kiwi/pkg/storage"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestKiwiStorage(t *testing.T) {
+	config.SetTestFlag(t, "data_dir", t.TempDir())
+	store, err := NewKiwiStorage()
+	assert.NoError(t, err)
+
+	t.Run("set", func(t *testing.T) {
+		assert.NoError(t, store.Set([]byte("k1"), []byte("v1")))
+		assert.NoError(t, store.Set([]byte("k2"), []byte("v2")))
+		assert.NoError(t, store.Set([]byte("k3"), []byte("v3")))
+	})
+	t.Run("get_existing_key", func(t *testing.T) {
+		val, err := store.Get([]byte("k1"))
+		assert.NoError(t, err)
+		assert.Equal(t, []byte("v1"), val)
+	})
+	t.Run("get_non_existent_key", func(t *testing.T) {
+		_, err := store.Get([]byte("non_existent"))
+		assert.ErrorIs(t, err, storage.ErrKeyNotFound)
+	})
+	t.Run("delete_existing_key", func(t *testing.T) {
+		assert.NoError(t, store.Delete([]byte("k2")))
+		val, err := store.Get([]byte("k2"))
+		assert.ErrorIs(t, err, storage.ErrKeyNotFound)
+		assert.Nil(t, val)
+	})
+	t.Run("delete_non_existent_key", func(t *testing.T) {
+		assert.ErrorIs(t, store.Delete([]byte("random")), storage.ErrKeyNotFound)
+	})
+	t.Run("set_expirable", func(t *testing.T) {
+		assert.NoError(t, store.SetExpirable([]byte("kx"), []byte("vx"), 10*time.Millisecond))
+		assert.Eventually(t, func() bool {
+			_, err := store.Get([]byte("kx"))
+			return errors.Is(err, storage.ErrKeyNotFound)
+		}, time.Second, 10*time.Millisecond)
+	})
+}
