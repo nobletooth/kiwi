@@ -58,8 +58,8 @@ RUN mkdir -p bin && \
     ./cmd/kiwi
 
 # =============================================================================
-# Runtime layer: Minimal production image with security hardening
-# This layer contains only the compiled binary and essential runtime files
+# Runtime layer: Minimal production image with security hardening.
+# This layer contains only the compiled binary and essential runtime files.
 # =============================================================================
 FROM alpine:3.20 AS runtime
 
