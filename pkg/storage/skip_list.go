@@ -17,11 +17,9 @@ import (
 	"iter"
 	"math/rand"
 	"time"
-)
 
-// CompareFn defines a three-way comparison for keys of type K.
-// It must return a negative value if x < y, 0 if x == y, and a positive value if x > y.
-type CompareFn[K any] func(x, y K) int
+	"github.com/nobletooth/kiwi/pkg/utils"
+)
 
 // skipListNode represents a node in the skip list.
 type skipListNode[K any, V any] struct {
@@ -39,13 +37,13 @@ type SkipList[K any, V any] struct {
 	level, maxLevel int
 	p               float64 // Probability that a node is promoted to the next level.
 	rnd             *rand.Rand
-	compare         CompareFn[K]
+	compare         utils.CompareFn[K]
 }
 
 // NewSkipList creates a new empty skip list.
 // The compare function defines the total ordering over keys.
 // Defaults: maxLevel=16, p=0.25.
-func NewSkipList[K any, V any](compare CompareFn[K]) *SkipList[K, V] {
+func NewSkipList[K any, V any](compare utils.CompareFn[K]) *SkipList[K, V] {
 	if compare == nil {
 		panic("SkipList requires a non-nil compare function")
 	}
@@ -173,4 +171,47 @@ func (s *SkipList[K, V]) Iterate() iter.Seq[Pair[K, V]] {
 			}
 		}
 	}
+}
+
+// ScanRange returns an iterator over key/value pairs within the range [start, end).
+// If start is the zero value, iteration begins from the first key.
+// If end is the zero value, iteration continues to the last key.
+func (s *SkipList[K, V]) ScanRange(start, end K) iter.Seq[Pair[K, V]] {
+	return func(yield func(Pair[K, V]) bool) {
+		if s == nil || s.head == nil {
+			return
+		}
+
+		// Find the starting node.
+		var startNode *skipListNode[K, V]
+		if utils.IsZero(start, s.compare) {
+			startNode = s.head.forwards[0] // Start from first element.
+		} else {
+			// Find the first node >= start.
+			node := s.head
+			for lvl := s.level - 1; lvl >= 0; lvl-- {
+				for next := node.forwards[lvl]; next != nil && s.compare(next.key, start) < 0; next = node.forwards[lvl] {
+					node = next
+				}
+			}
+			startNode = node.forwards[0]
+		}
+
+		// Iterate while within range.
+		specifiedEnd := !utils.IsZero(end, s.compare)
+		for current := startNode; current != nil; current = current.forwards[0] {
+			// Stop if we've reached or passed the end key
+			if specifiedEnd && s.compare(current.key, end) >= 0 {
+				break
+			}
+			if !yield(Pair[K, V]{Key: current.key, Value: current.value}) {
+				return
+			}
+		}
+	}
+}
+
+// ScanFrom returns an iterator starting from the given key (inclusive) to the end.
+func (s *SkipList[K, V]) ScanFrom(start K) iter.Seq[Pair[K, V]] {
+	return s.ScanRange(start, *new(K) /*zeroEnd*/)
 }

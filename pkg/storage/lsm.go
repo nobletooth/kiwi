@@ -83,7 +83,7 @@ func NewLSMTree(dataDir string, table int64) (*LSMTree, error) {
 
 	// All SSTables would be the previous part of some other part, except the latest one.
 	var latestDiskTable *SSTable
-	for part, _ := range diskTables {
+	for part := range diskTables {
 		if _, hasPrevPart := prevPartIds[part]; !hasPrevPart {
 			if latestDiskTable != nil {
 				tail := latestDiskTable.header.GetId()

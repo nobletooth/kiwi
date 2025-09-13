@@ -130,3 +130,26 @@ func TestSkipList_IterateCollect(t *testing.T) {
 		assert.Equal(t, "TWO", pairs[1].Value)
 	}
 }
+
+func TestSkipList_Scan(t *testing.T) {
+	skipList := NewSkipList[int, string](cmp.Compare)
+	// Insert in non-sorted order.
+	setNewKey(t, skipList, 5, "five")
+	setNewKey(t, skipList, 3, "three")
+	setNewKey(t, skipList, 1, "one")
+	setNewKey(t, skipList, 2, "two")
+	setNewKey(t, skipList, 4, "four")
+
+	t.Run("scan_range", func(t *testing.T) {
+		// The range end is exclusive, i.e. [2, 4).
+		got := slices.Collect(skipList.ScanRange(2 /*start*/, 5 /*end*/))
+		expected := []Pair[int, string]{{Key: 2, Value: "two"}, {Key: 3, Value: "three"}, {Key: 4, Value: "four"}}
+		assert.Equal(t, expected, got)
+	})
+	t.Run("scan_from", func(t *testing.T) {
+		// Query has no range end.
+		got := slices.Collect(skipList.ScanFrom(3 /*start*/))
+		expected := []Pair[int, string]{{Key: 3, Value: "three"}, {Key: 4, Value: "four"}, {Key: 5, Value: "five"}}
+		assert.Equal(t, expected, got)
+	})
+}
