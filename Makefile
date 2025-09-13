@@ -1,4 +1,4 @@
-.PHONY: help proto test
+.PHONY: help proto test image
 
 # Use bash for recipes and enable strict mode for safer scripts (Google style).
 SHELL := bash
@@ -64,5 +64,15 @@ run: bin/kiwi ## To run a minimal kiwi server. Example: make run -- --address 0.
 %:
 	@:
 
-version: kiwi ## To print the build info.
+version: bin/kiwi ## To print the build info.
 	@./bin/kiwi -print_version -log_level info | jq
+
+image: ## Build Docker image with version and latest tags
+	@docker build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg BUILD_TIME=$(BUILD_TIME) \
+		-t kiwi:$(VERSION) \
+		-t kiwi:latest \
+		.
+	@echo "Successfully built image: kiwi:$(VERSION) and kiwi:latest"
