@@ -39,10 +39,16 @@ func TestKiwiStorage(t *testing.T) {
 		assert.ErrorIs(t, store.Delete([]byte("random")), storage.ErrKeyNotFound)
 	})
 	t.Run("set_expirable", func(t *testing.T) {
-		assert.NoError(t, store.SetExpirable([]byte("kx"), []byte("vx"), 10*time.Millisecond))
+		assert.NoError(t, store.SetExpirable([]byte("kx1"), []byte("vx1"), 10*time.Millisecond))
+		assert.NoError(t, store.SetExpirable([]byte("kx2"), []byte("vx2"), 1*time.Hour))
+		// Make sure "kx1" eventually expires.
 		assert.Eventually(t, func() bool {
 			_, err := store.Get([]byte("kx"))
 			return errors.Is(err, storage.ErrKeyNotFound)
 		}, time.Second, 10*time.Millisecond)
+		// Even when "kx1" expired, the "kx2" still remains since it has a really long TTL.
+		val, err := store.Get([]byte("kx2"))
+		assert.NoError(t, err)
+		assert.Equal(t, []byte("vx2"), val)
 	})
 }
