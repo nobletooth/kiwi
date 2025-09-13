@@ -13,14 +13,12 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 )
 
-var configFilePath = flag.String("config_file", "config.txtpb", "Path to the configuration file.")
+var configFilePath = flag.String("config_file", "pkg/config/default.txtpb", "Path to the configuration file.")
 
-// InitFlags initializes the flags from the config file specified by the -config_file flag.
+// ConfigureWithFile initializes the flags from the config file specified by the -config_file flag.
 // It should be called after defining all flags and before using them.
 // Assumes config file doesn't have repeated/map fields. Supports nested messages and oneof blocks only.
-func InitFlags() {
-	flag.Parse()
-
+func ConfigureWithFile() {
 	if *configFilePath == "" {
 		slog.Info("Config file not specified. Skipping config initialization.")
 		return

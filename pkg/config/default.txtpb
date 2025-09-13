@@ -3,9 +3,18 @@
 
 server {
   address: "0.0.0.0:6380"
+  log_level: "info"
+  log_handler: "json"
 }
 
 index {
   # 1% false positive rate is a tuned value on DDR disks, saving time when disk read takes 100x more than RAM read.
   bf_false_positive_rate: 0.01
+  bf_min_keys: 1000
+}
+
+block_cache {
+  enable: true
+  capacity: 1000
+  ttl: "5m" # Data blocks are cached for 5 minutes in memory.
 }

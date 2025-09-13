@@ -17,8 +17,9 @@ import (
 var printVersion = flag.Bool("print_version", false, "Print the version and exit.")
 
 func main() {
-	config.InitFlags()
+	flag.Parse()
 	utils.InitLogging()
+	config.ConfigureWithFile()
 
 	if *printVersion {
 		slog.Info("Kiwi build info.", "version", utils.Version, "commit", utils.Commit, "build", utils.BuildTime)
