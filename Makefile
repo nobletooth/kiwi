@@ -24,10 +24,8 @@ help: ## Display this help screen
 proto: ## To generate protobuf code.
 	@buf generate
 
-.bins:
+bin/kiwi: $(SRCS) | proto ## To build the kiwi binary.
 	@mkdir -p bin
-
-bin/kiwi: $(SRCS) | .bins proto ## To build the kiwi binary.
 	@go build -o ./bin/kiwi -ldflags="$(LD_FLAGS)" ./cmd/kiwi
 
 test: $(SRCS) | bin/kiwi proto ## To run tests. Usage: make test [--pkg <path>] [--test <regex-or-name>]  (use `--` before flags)
@@ -69,6 +67,7 @@ version: bin/kiwi ## To print the build info.
 
 image: ## Build Docker image with version and latest tags
 	@docker build \
+  		--rm \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg BUILD_TIME=$(BUILD_TIME) \
