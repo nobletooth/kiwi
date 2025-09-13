@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"flag"
 	"iter"
+
+	"github.com/nobletooth/kiwi/pkg/utils"
 )
 
 var (
@@ -63,7 +65,7 @@ func (m *MemTable) Delete(key []byte) /*found*/ bool {
 func (m *MemTable) Pairs() iter.Seq[BytePair] {
 	it := m.skipList.Iterate()
 	return func(yield func(BytePair) bool) {
-		it(func(pair Pair[ /*key*/ []byte /*value*/, []byte]) bool {
+		it(func(pair utils.Pair[ /*key*/ []byte /*value*/, []byte]) bool {
 			return yield(BytePair(pair))
 		})
 	}

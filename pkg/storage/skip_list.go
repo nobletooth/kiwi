@@ -160,13 +160,13 @@ func (s *SkipList[K, V]) Delete(key K) (V /*previousVal*/, bool /*found*/) {
 
 // Iterate returns an iterator over all key/value pairs in ascending key order.
 // Usage: pairs := slices.Collect(skipList.Iterate())
-func (s *SkipList[K, V]) Iterate() iter.Seq[Pair[K, V]] {
-	return func(yield func(Pair[K, V]) bool) {
+func (s *SkipList[K, V]) Iterate() iter.Seq[utils.Pair[K, V]] {
+	return func(yield func(utils.Pair[K, V]) bool) {
 		if s == nil || s.head == nil {
 			return
 		}
 		for noteIter := s.head.forwards[0]; noteIter != nil; noteIter = noteIter.forwards[0] {
-			if !yield(Pair[K, V]{Key: noteIter.key, Value: noteIter.value}) {
+			if !yield(utils.Pair[K, V]{Key: noteIter.key, Value: noteIter.value}) {
 				return
 			}
 		}
@@ -176,8 +176,8 @@ func (s *SkipList[K, V]) Iterate() iter.Seq[Pair[K, V]] {
 // ScanRange returns an iterator over key/value pairs within the range [start, end).
 // If start is the zero value, iteration begins from the first key.
 // If end is the zero value, iteration continues to the last key.
-func (s *SkipList[K, V]) ScanRange(start, end K) iter.Seq[Pair[K, V]] {
-	return func(yield func(Pair[K, V]) bool) {
+func (s *SkipList[K, V]) ScanRange(start, end K) iter.Seq[utils.Pair[K, V]] {
+	return func(yield func(utils.Pair[K, V]) bool) {
 		if s == nil || s.head == nil {
 			return
 		}
@@ -204,7 +204,7 @@ func (s *SkipList[K, V]) ScanRange(start, end K) iter.Seq[Pair[K, V]] {
 			if specifiedEnd && s.compare(current.key, end) >= 0 {
 				break
 			}
-			if !yield(Pair[K, V]{Key: current.key, Value: current.value}) {
+			if !yield(utils.Pair[K, V]{Key: current.key, Value: current.value}) {
 				return
 			}
 		}
@@ -212,6 +212,6 @@ func (s *SkipList[K, V]) ScanRange(start, end K) iter.Seq[Pair[K, V]] {
 }
 
 // ScanFrom returns an iterator starting from the given key (inclusive) to the end.
-func (s *SkipList[K, V]) ScanFrom(start K) iter.Seq[Pair[K, V]] {
+func (s *SkipList[K, V]) ScanFrom(start K) iter.Seq[utils.Pair[K, V]] {
 	return s.ScanRange(start, *new(K) /*zeroEnd*/)
 }

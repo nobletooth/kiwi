@@ -3,9 +3,13 @@ package storage
 import (
 	"errors"
 	"iter"
+
+	"github.com/nobletooth/kiwi/pkg/utils"
 )
 
 var ErrKeyNotFound = errors.New("key was not found")
+
+type BytePair utils.Pair[[]byte /*key*/, []byte /*value*/]
 
 // KeyValueHolder is a simple append-only storage interface.
 type KeyValueHolder interface {
