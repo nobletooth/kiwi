@@ -58,7 +58,7 @@ func unpack(packed []byte) (unpackedValue, error) {
 			return emptyUnpacked, errors.New("value is too short to contain expiry")
 		}
 		expiryNs := int64(binary.BigEndian.Uint64(packed[len(packed)-8:]))
-		expiryTime = time.Unix(0, expiryNs)
+		expiryTime = time.Unix(0, expiryNs).UTC()
 		value = packed[1 : len(packed)-8]
 	} else {
 		value = packed[1:]
@@ -80,6 +80,7 @@ func (uv unpackedValue) pack() []byte {
 	}
 	copy(buffer[1:], uv.value)
 	if uv.opt.Is(Expirable) {
+		// Always store expiry in UTC
 		binary.BigEndian.PutUint64(buffer[1+len(uv.value):], uint64(uv.expiry.UTC().UnixNano()))
 	}
 	return buffer
@@ -89,5 +90,5 @@ func (uv unpackedValue) isExpired() bool {
 	if !uv.opt.Is(Expirable) {
 		return false
 	}
-	return time.Now().After(uv.expiry)
+	return !uv.expiry.IsZero() && time.Now().After(uv.expiry)
 }
