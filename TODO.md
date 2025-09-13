@@ -1,0 +1,11 @@
+Coming up:
+- [ ] Add some basic command support, HGET, KEYS, HSET, etc.
+- [ ] Add multi-DB support {if possible}.
+- [ ] Add redis conformance tests.
+- [ ] Add cluster support -> failover + replication
+- [ ] Add cluster sharding support.
+- [ ] Add metrics.
+- [ ] Setup CI / proper releases
+- [ ] Add helm charts
+- [ ] Add cluster integration / redis conformance tests.
+- [ ] Add docs for data layout.
