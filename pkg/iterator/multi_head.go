@@ -82,10 +82,10 @@ func (ih *iterHeap[K, V]) TopKey() K {
 	return *new(K)
 }
 
-// Merged allows multi-way iteration over a list of increasing iterators with different priorities.
+// MultiHead allows multi-way iteration over a list of increasing iterators with different priorities.
 // Incoming items from sequences are merged together with their key (K), and higher priorities are
 // selected while other are discarded. Note: Sequences are expected to be increasing.
-func Merged[Seq iter.Seq[utils.Pair[K, V]], K any, V any](cmp utils.CompareFn[K], sequences []Seq) (Seq, error) {
+func MultiHead[Seq iter.Seq[utils.Pair[K, V]], K any, V any](cmp utils.CompareFn[K], sequences []Seq) (Seq, error) {
 	if cmp == nil {
 		return nil, errors.New("expected a non-nil comparison function")
 	}
