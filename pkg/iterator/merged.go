@@ -1,6 +1,10 @@
 // Since Kiwi has multiple sorted structures (SSTables, MemTables, Cluster shards, etc.) it needs a way to
 // iterate over different sources using constant memory usage; or else the server memory would run out while doing
 // range scans / full table scans.
+//
+// This module implements a heap-based multi-way iterator that lazily yields from multiple underneath iterators.
+// Keys pulled from multiple sequences are sorted by key and sequence priority; values pulled from lower priority
+// sequences are discarded in case their key was already seen.
 
 package iterator
 
