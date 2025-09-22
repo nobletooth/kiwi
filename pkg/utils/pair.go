@@ -6,3 +6,5 @@ type Pair[K any, V any] struct {
 	Key   K
 	Value V
 }
+
+type BytePair Pair[[]byte /*key*/, []byte /*value*/]

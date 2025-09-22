@@ -9,8 +9,6 @@ import (
 
 var ErrKeyNotFound = errors.New("key was not found")
 
-type BytePair utils.Pair[[]byte /*key*/, []byte /*value*/]
-
 // KeyValueHolder is a simple append-only storage interface.
 type KeyValueHolder interface {
 	// Get returns the corresponding value to the given `key` or else ErrKeyNotFound.
@@ -29,7 +27,7 @@ type RangeScanner interface {
 	// Scan returns an iterator over key-value pairs within the given range [start, end).
 	// If start is nil, scanning begins from the first key.
 	// If end is nil, scanning continues to the last key.
-	Scan(start, end []byte) iter.Seq[BytePair]
+	Scan(start, end []byte) iter.Seq[utils.BytePair]
 	// ScanPrefix returns an iterator over all key-value pairs with the given prefix.
-	ScanPrefix(prefix []byte) iter.Seq[BytePair]
+	ScanPrefix(prefix []byte) iter.Seq[utils.BytePair]
 }

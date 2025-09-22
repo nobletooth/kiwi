@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/nobletooth/kiwi/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +16,7 @@ import (
 func TestSSTable(t *testing.T) {
 	const tableId = 1
 	resultFile := filepath.Join(t.TempDir(), strconv.Itoa(tableId), "test.sst")
-	data := []BytePair{
+	data := []utils.BytePair{
 		{Key: []byte("zed"), Value: []byte("editor")},
 		{Key: []byte("apple"), Value: []byte("fruit")},
 		{Key: []byte("carrot"), Value: []byte("vegetable")},
@@ -28,7 +29,7 @@ func TestSSTable(t *testing.T) {
 		{Key: []byte("bruce"), Value: []byte("banner")},
 	}
 	// Ensure data is sorted by key before writing to SSTable.
-	slices.SortFunc(data, func(a, b BytePair) int { return bytes.Compare(a.Key, b.Key) })
+	slices.SortFunc(data, func(a, b utils.BytePair) int { return bytes.Compare(a.Key, b.Key) })
 	require.NoError(t, writeSSTable(0 /*prevId*/, 1 /*nextId*/, resultFile, data))
 
 	sst, err := NewSSTable(resultFile)

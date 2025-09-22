@@ -47,7 +47,7 @@ func getBloomFalsePositiveRate() float64 {
 }
 
 // writeSSTable writes the given key-value pairs to an SSTable file at the specified path.
-func writeSSTable(prevId, nextId int64, path string, pairs []BytePair) error {
+func writeSSTable(prevId, nextId int64, path string, pairs []utils.BytePair) error {
 	if len(pairs) == 0 {
 		return errors.New("expected a non-empty list of pairs")
 	}

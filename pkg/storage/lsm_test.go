@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/nobletooth/kiwi/pkg/config"
+	"github.com/nobletooth/kiwi/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,12 +24,12 @@ func TestNewLSMTree(t *testing.T) {
 		dataDir := t.TempDir()
 		table := int64(10)
 		tableDir := filepath.Join(dataDir, strconv.FormatInt(table, 10 /*base*/))
-		assert.NoError(t, writeSSTable(0 /*prevId*/, 1 /*nextId*/, filepath.Join(tableDir, "1.sst"), []BytePair{
+		assert.NoError(t, writeSSTable(0 /*prevId*/, 1 /*nextId*/, filepath.Join(tableDir, "1.sst"), []utils.BytePair{
 			{Key: []byte("k1"), Value: []byte("v1")},
 			{Key: []byte("k2"), Value: []byte("v2")},
 			{Key: []byte("k3"), Value: []byte("v3")},
 		}))
-		assert.NoError(t, writeSSTable(1 /*prevId*/, 2 /*nextId*/, filepath.Join(tableDir, "2.sst"), []BytePair{
+		assert.NoError(t, writeSSTable(1 /*prevId*/, 2 /*nextId*/, filepath.Join(tableDir, "2.sst"), []utils.BytePair{
 			{Key: []byte("k2"), Value: []byte("v1*")},
 			{Key: []byte("k1"), Value: []byte("v1*")},
 			{Key: []byte("k4"), Value: []byte("v4")},

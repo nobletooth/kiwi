@@ -6,6 +6,7 @@ package storage
 import (
 	"slices"
 
+	"github.com/nobletooth/kiwi/pkg/utils"
 	kiwipb "github.com/nobletooth/kiwi/proto"
 )
 
@@ -27,7 +28,7 @@ func lcpLen(k1, k2 []byte) int {
 // compressDataBlocks splits a sorted list of keys into optimal prefixed blocks.
 // Each block stores one shared prefix and per-key suffixes, minimizing total bytes.
 // Tie-breaker: on equal savings prefer fewer blocks (i.e., longer blocks).
-func compressDataBlocks(pairs []BytePair) ([] /*prefix*/ []byte, []*kiwipb.DataBlock) {
+func compressDataBlocks(pairs []utils.BytePair) ([] /*prefix*/ []byte, []*kiwipb.DataBlock) {
 	pairsNum := len(pairs)
 	if pairsNum == 0 {
 		return nil, nil

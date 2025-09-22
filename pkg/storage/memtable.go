@@ -62,11 +62,11 @@ func (m *MemTable) Delete(key []byte) /*found*/ bool {
 }
 
 // Pairs returns an iterator over all key-value pairs in the memtable.
-func (m *MemTable) Pairs() iter.Seq[BytePair] {
+func (m *MemTable) Pairs() iter.Seq[utils.BytePair] {
 	it := m.skipList.Iterate()
-	return func(yield func(BytePair) bool) {
+	return func(yield func(utils.BytePair) bool) {
 		it(func(pair utils.Pair[ /*key*/ []byte /*value*/, []byte]) bool {
-			return yield(BytePair(pair))
+			return yield(utils.BytePair(pair))
 		})
 	}
 }
