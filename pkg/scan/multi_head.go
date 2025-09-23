@@ -6,7 +6,7 @@
 // Keys pulled from multiple sequences are sorted by key and sequence priority; values pulled from lower priority
 // sequences are discarded in case their key was already seen.
 
-package iterator
+package scan
 
 import (
 	"container/heap"
