@@ -24,9 +24,14 @@ func TestUnpackedValue(t *testing.T) {
 			shouldBeExpired: false,
 		},
 		{
-			name:            "expirable",
+			name:            "expired_expirable",
 			unpacked:        unpackedValue{opt: Expirable, value: []byte("v"), expiry: time.Now().Add(-1 * time.Hour)},
 			shouldBeExpired: true, // Expired one hour ago.
+		},
+		{
+			name:            "unexpired_expirable",
+			unpacked:        unpackedValue{opt: Expirable, value: []byte("v"), expiry: time.Now().Add(1 * time.Hour)},
+			shouldBeExpired: false, // Will expire in 1 hour.
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {

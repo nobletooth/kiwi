@@ -87,8 +87,5 @@ func (uv unpackedValue) pack() []byte {
 }
 
 func (uv unpackedValue) isExpired() bool {
-	if !uv.opt.Is(Expirable) {
-		return false
-	}
-	return !uv.expiry.IsZero() && time.Now().After(uv.expiry)
+	return uv.opt.Is(Expirable) && !uv.expiry.IsZero() && time.Now().After(uv.expiry)
 }
