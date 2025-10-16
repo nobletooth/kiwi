@@ -114,6 +114,10 @@ func (ks *KiwiStorage) Set(cmd SetCommand) SetResult {
 			return SetResult{err: fmt.Errorf("failed to unpack previous value: %w", err)}
 		}
 		unpackedPrev = unpacked
+		// Tombstones and expired keys should be treated as non-existent for NX/XX checks.
+		if unpackedPrev.is(TombStone) || unpackedPrev.isExpired() {
+			hasPrevValue = false
+		}
 	}
 
 	// Build the unpacked value that's going to be set in the storage.
