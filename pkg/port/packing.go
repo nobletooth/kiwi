@@ -14,8 +14,8 @@ import (
 // Opts represents options for storing a key-value pair.
 type Opts uint8
 
-// Is returns true if any of the given options are toggled in the current options.
-func (o Opts) Is(opts Opts) bool {
+// is returns true if any of the given options are toggled in the current options.
+func (o Opts) is(opts Opts) bool {
 	return o&opts != 0
 }
 
@@ -47,13 +47,13 @@ func unpack(packed []byte) (unpackedValue, error) {
 		return emptyUnpacked, errors.New("value is emptyUnpacked")
 	}
 	opt := Opts(packed[0])
-	if opt.Is(TombStone) {
+	if opt.is(TombStone) {
 		return tombstoneUnpacked, nil
 	}
 
 	var value []byte
 	expiryTime := time.Time{}
-	if opt.Is(Expirable) {
+	if opt.is(Expirable) {
 		if len(packed) < 1+8 {
 			return emptyUnpacked, errors.New("value is too short to contain expiry")
 		}
@@ -70,16 +70,16 @@ func unpack(packed []byte) (unpackedValue, error) {
 // packs serializes the options and the value into a single byte slice.
 func (uv unpackedValue) pack() []byte {
 	outputSize := 1 + len(uv.value) // 1 byte for the options.
-	if uv.opt.Is(Expirable) {
+	if uv.opt.is(Expirable) {
 		outputSize += 8 // 8 bytes for the expiry time.
 	}
 	buffer := make([]byte, outputSize)
 	buffer[0] = byte(uv.opt)
-	if uv.opt.Is(TombStone) {
+	if uv.opt.is(TombStone) {
 		return buffer
 	}
 	copy(buffer[1:], uv.value)
-	if uv.opt.Is(Expirable) {
+	if uv.opt.is(Expirable) {
 		// Always store expiry in UTC
 		binary.BigEndian.PutUint64(buffer[1+len(uv.value):], uint64(uv.expiry.UTC().UnixNano()))
 	}
@@ -87,5 +87,9 @@ func (uv unpackedValue) pack() []byte {
 }
 
 func (uv unpackedValue) isExpired() bool {
-	return uv.opt.Is(Expirable) && !uv.expiry.IsZero() && time.Now().After(uv.expiry)
+	return uv.opt.is(Expirable) && !uv.expiry.IsZero() && time.Now().After(uv.expiry)
+}
+
+func (uv unpackedValue) is(opt Opts) bool {
+	return uv.opt.is(opt)
 }

@@ -1,12 +1,16 @@
 package port
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nobletooth/kiwi/pkg/storage"
 	"github.com/tidwall/redcon"
@@ -17,7 +21,8 @@ var address = flag.String("address", "0.0.0.0:6380", "The ip:port to listen on f
 // RedisCommand represents a Redis command with its arguments.
 type RedisCommand struct {
 	command string
-	args    [][]byte
+	raw     []byte   // All the given command sent over RESP, i.e. GET key.
+	args    [][]byte // Only the args sent over, without the command.
 }
 
 // RedisOutput conforms to a real Redis server output on non pub / sub commands.
@@ -54,6 +59,97 @@ func writeRedisError(err error) RedisOutput {
 	return RedisOutput{err: &msg}
 }
 
+// SET command:
+
+// parseSetCommand parses an inline-style Redis SET command.
+// It supports: SET key value [NX|XX] [GET] [EX s|PX ms|EXAT sec|PXAT ms|KEEPTTL]
+// Note: Options must appear in the order shown above for this inline parser.
+// For RESP arrays, parse tokens instead of using this regex.
+func parseSetCommand(in []byte, now time.Time) (SetCommand, error) {
+	// Regex groups:
+	// 1:key 2:value 3:NX|XX 4:GET 5:EX|PX|EXAT|PXAT 6:number 7:KEEPTTL
+	re := regexp.MustCompile(`(?i)^\s*SET\s+(\S+)\s+(\S+)(?:\s+(NX|XX))?(?:\s+(GET))?(?:(?:\s+(EX|PX|EXAT|PXAT)\s+(\d+))|(?:\s+(KEEPTTL)))?\s*$`)
+	m := re.FindSubmatch(in)
+	if m == nil {
+		return SetCommand{}, fmt.Errorf("invalid SET syntax: %q", strings.TrimSpace(string(in)))
+	}
+
+	key, val := m[1], m[2]
+	optExist := upperBytes(m[3])
+	// m[4] is GET, ignored here since struct has no field for it.
+	optTTLKind := upperBytes(m[5])
+	num := m[6]
+	optKeepTTL := len(m[7]) > 0
+
+	// Existence option.
+	var ex existenceCheck
+	if bytes.Equal(optExist, []byte("NX")) {
+		ex = ifNotExists
+	} else if bytes.Equal(optExist, []byte("XX")) {
+		ex = ifExists
+	} // else: leave zero value; cannot distinguish "no-check" vs NX with given enum
+
+	// TTL calculation.
+	var exp time.Time
+	if len(optTTLKind) > 0 && optKeepTTL {
+		return SetCommand{}, errors.New("KEEPTTL cannot be combined with EX/PX/EXAT/PXAT")
+	}
+	if len(optTTLKind) > 0 {
+		if len(num) == 0 {
+			return SetCommand{}, errors.New("missing numeric value for expiration")
+		}
+		n, err := strconv.ParseInt(string(num), 10, 64)
+		if err != nil || n < 0 {
+			return SetCommand{}, fmt.Errorf("invalid expiration number: %s", num)
+		}
+		switch string(optTTLKind) {
+		case "EX":
+			exp = now.Add(time.Duration(n) * time.Second)
+		case "PX":
+			exp = now.Add(time.Duration(n) * time.Millisecond)
+		case "EXAT":
+			exp = time.Unix(n, 0).UTC()
+		case "PXAT":
+			exp = time.Unix(0, n*int64(time.Millisecond)).UTC()
+		default:
+			return SetCommand{}, fmt.Errorf("unknown expiration kind: %s", optTTLKind)
+		}
+	}
+
+	return SetCommand{
+		key:        key,
+		value:      val,
+		expiryTime: exp, // Zero means no expiry unless KEEPTTL keeps an existing one.
+		existence:  ex,
+		keepTtl:    optKeepTTL,
+	}, nil
+}
+
+func upperBytes(b []byte) []byte {
+	if len(b) == 0 {
+		return b
+	}
+	return []byte(strings.ToUpper(string(b)))
+}
+
+func handleSetCommand(cmd RedisCommand, store *KiwiStorage) RedisOutput {
+	setCommand, err := parseSetCommand(cmd.raw, time.Now())
+	if err != nil {
+		return writeRedisError(err)
+	}
+	setResult := store.Set(setCommand)
+	if setResult.err != nil {
+		return writeRedisError(setResult.err)
+	}
+	if setResult.hasPreviousValue && setResult.previousValue != nil {
+		return writeRedisBytes(setResult.previousValue)
+	}
+	if !setResult.couldSet {
+		return writeRedisNil()
+	}
+	return writeRedisString("OK")
+}
+
 // RedisHandler handles Redis commands using a Kiwi backend.
 type RedisHandler struct {
 	store *KiwiStorage
@@ -77,11 +173,7 @@ func (rh *RedisHandler) handle(cmd RedisCommand) RedisOutput {
 		if len(cmd.args) != 2 {
 			return writeRedisError(errors.New("ERR wrong number of arguments for 'SET' command"))
 		}
-		key, value := cmd.args[0], cmd.args[1]
-		if err := rh.store.Set(key, value); err != nil {
-			return writeRedisError(err)
-		}
-		return writeRedisString("OK")
+		return handleSetCommand(cmd, rh.store)
 	case "GET":
 		if len(cmd.args) != 1 {
 			return writeRedisError(errors.New("wrong number of arguments for 'get' command"))
@@ -125,10 +217,11 @@ func RunRedisServer(ctx context.Context, store *KiwiStorage) error {
 		/*handler*/ func(conn redcon.Conn, cmd redcon.Command) {
 			slog.Debug("Handling command.", "cmd", string(cmd.Raw))
 
-			// Convert redcon.Command to RedisCommand.
+			// Convert redcon.RedisCommand to RedisCommand.
 			redisCmd := RedisCommand{
 				command: strings.ToUpper(string(cmd.Args[0])), // Allows case-insensitive commands.
 				args:    cmd.Args[1:],                         // Exclude the command itself.
+				raw:     cmd.Raw,
 			}
 			output := redisHandler.handle(redisCmd)
 			if output.closeConnection {

@@ -16,9 +16,9 @@ func TestKiwiStorage(t *testing.T) {
 	assert.NoError(t, err)
 
 	t.Run("set", func(t *testing.T) {
-		assert.NoError(t, store.Set([]byte("k1"), []byte("v1")))
-		assert.NoError(t, store.Set([]byte("k2"), []byte("v2")))
-		assert.NoError(t, store.Set([]byte("k3"), []byte("v3")))
+		assert.NoError(t, store.Set(SetCommand{key: []byte("k1"), value: []byte("v1")}).err)
+		assert.NoError(t, store.Set(SetCommand{key: []byte("k2"), value: []byte("v2")}).err)
+		assert.NoError(t, store.Set(SetCommand{key: []byte("k3"), value: []byte("v3")}).err)
 	})
 	t.Run("get_existing_key", func(t *testing.T) {
 		val, err := store.Get([]byte("k1"))
@@ -39,8 +39,16 @@ func TestKiwiStorage(t *testing.T) {
 		assert.ErrorIs(t, store.Delete([]byte("random")), storage.ErrKeyNotFound)
 	})
 	t.Run("set_expirable", func(t *testing.T) {
-		assert.NoError(t, store.SetExpirable([]byte("kx1"), []byte("vx1"), 10*time.Millisecond))
-		assert.NoError(t, store.SetExpirable([]byte("kx2"), []byte("vx2"), 1*time.Hour))
+		assert.NoError(t, store.Set(SetCommand{
+			key:        []byte("kx1"),
+			value:      []byte("vx1"),
+			expiryTime: time.Now().Add(10 * time.Millisecond),
+		}).err)
+		assert.NoError(t, store.Set(SetCommand{
+			key:        []byte("kx2"),
+			value:      []byte("vx2"),
+			expiryTime: time.Now().Add(1 * time.Hour),
+		}).err)
 		// Make sure "kx1" eventually expires.
 		assert.Eventually(t, func() bool {
 			_, err := store.Get([]byte("kx"))

@@ -16,18 +16,16 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sync"
 
 	"github.com/nobletooth/kiwi/pkg/utils"
 )
 
 // LSMTree represents a log-structured merge tree (LSM tree) for a specific Kiwi table (Redis db).
 type LSMTree struct { // Implements KeyValueHolder.
-	table           int64        // The Kiwi table ID (Redis db number).
-	dir             string       // Path where tables files are stored; ends with table.
-	mux             sync.RWMutex // Protects against race conditions.
-	memTable        *MemTable    // Lookups are started from the memtable, and then disk tables.
-	latestDiskTable *SSTable     // Disk lookups are started from the latest disk table.
+	table           int64     // The Kiwi table ID (Redis db number).
+	dir             string    // Path where tables files are stored; ends with table.
+	memTable        *MemTable // Lookups are started from the memtable, and then disk tables.
+	latestDiskTable *SSTable  // Disk lookups are started from the latest disk table.
 	diskTables      map[ /*partId*/ int64]*SSTable
 }
 
@@ -102,7 +100,6 @@ func NewLSMTree(dataDir string, table int64) (*LSMTree, error) {
 
 	lsm := &LSMTree{
 		table:           table,
-		mux:             sync.RWMutex{},
 		memTable:        NewMemTable(),
 		latestDiskTable: latestDiskTable,
 		diskTables:      diskTables,
@@ -146,8 +143,6 @@ func (l *LSMTree) Get(key []byte) ([]byte, error) {
 	if len(key) == 0 {
 		return nil, fmt.Errorf("expected a non-empty key")
 	}
-	l.mux.RLock()
-	defer l.mux.RUnlock()
 	// First check the memtable.
 	if val, exists := l.memTable.Get(key); exists {
 		return val, nil
@@ -193,22 +188,14 @@ func (l *LSMTree) Set(key, value []byte) error {
 	if len(key) == 0 {
 		return fmt.Errorf("expected a non-empty key")
 	}
-
-	l.mux.Lock()
-	defer l.mux.Unlock()
-
 	if shouldFlush := l.memTable.Set(key, value); shouldFlush {
 		return l.flushMemTable()
 	}
-
 	return nil
 }
 
 // Swap stores the given key, value in the storage and returns the previous value corresponding to the key.
 func (l *LSMTree) Swap(key, value []byte) ( /*previousValue*/ []byte, error) {
-	l.mux.Lock()
-	defer l.mux.Unlock()
-
 	var (
 		returnValue []byte
 		found       = false
@@ -247,9 +234,6 @@ func (l *LSMTree) Close() error {
 	if l == nil {
 		return nil
 	}
-
-	l.mux.Lock()
-	defer l.mux.Unlock()
 
 	slog.Info("Closing LSM tree instance.")
 	var errs error

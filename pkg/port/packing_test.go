@@ -38,7 +38,7 @@ func TestUnpackedValue(t *testing.T) {
 			packed := testCase.unpacked.pack()
 			unpackedAgain, err := unpack(packed)
 			assert.NoError(t, err)
-			if testCase.unpacked.opt.Is(Expirable) {
+			if testCase.unpacked.opt.is(Expirable) {
 				assert.Equal(t, testCase.unpacked.opt, unpackedAgain.opt)
 				assert.Equal(t, testCase.unpacked.value, unpackedAgain.value)
 				assert.Equal(t, testCase.unpacked.expiry.UnixNano(), unpackedAgain.expiry.UnixNano())
